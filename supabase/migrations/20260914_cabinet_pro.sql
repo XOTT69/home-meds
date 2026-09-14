@@ -216,6 +216,8 @@ create trigger record_home_meds_members_activity after insert or update or delet
   for each row execute function public.home_meds_record_activity();
 
 revoke all on function public.home_meds_can_edit_owner(uuid) from public;
+revoke all on function public.home_meds_can_edit_owner_photo_path(text) from public;
+revoke all on function public.home_meds_update_household_member_role(uuid, text) from public;
 grant execute on function public.home_meds_can_edit_owner(uuid) to authenticated;
 grant execute on function public.home_meds_can_edit_owner_photo_path(text) to authenticated;
 grant execute on function public.home_meds_update_household_member_role(uuid, text) to authenticated;
