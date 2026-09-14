@@ -12,6 +12,7 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
 
   const changeMode = (next: Mode) => { setMode(next); setError(''); setMessage(''); };
   const submit = async (event: FormEvent) => {
@@ -33,13 +34,13 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
         const { error: authError } = await client.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: appUrl },
         });
         if (authError) throw authError;
         setMessage('Майже готово: перевірте пошту й підтвердьте адресу, щоб увійти.');
       }
       if (mode === 'recover') {
-        const { error: authError } = await client.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        const { error: authError } = await client.auth.resetPasswordForEmail(email, { redirectTo: appUrl });
         if (authError) throw authError;
         setMessage('Якщо акаунт існує, ми надіслали лист для безпечного відновлення доступу.');
       }
