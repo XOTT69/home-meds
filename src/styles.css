@@ -100,10 +100,14 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 
 .profile-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
 .profile-stack > :first-child { grid-column: span 2; }
-.profile-form { display: grid; gap: 14px; max-width: none; }
+.profile-form, .sharing-setup-note { display: grid; grid-column: span 2; gap: 14px; max-width: none; }
 .profile-form .panel-title { padding-bottom: 0; }
+.sharing-setup-note h2 { margin: 0; color: #304b42; font-size: 18px; }
+.sharing-setup-note .subtext { margin: -3px 0 0; }
 .topbar-lock { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #dce7e0; border-radius: 9px; background: #fff; color: #4b695e; font-size: 12px; font-weight: 700; min-height: 35px; padding: 0 10px; }
 .topbar-lock:hover { color: #1d6d5a; border-color: #bcd7cc; background: #f6faf7; }
+.topbar > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shared-cabinet-indicator { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 8px; color: #246e5b; background: #e7f4ed; font-size: 10px; font-weight: 800; }
 .family-panel { min-height: 185px; }
 .family-grid { display: grid; gap: 8px; }
 .family-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: start; gap: 9px; padding: 11px 0; border-top: 1px solid #edf0eb; }
@@ -116,7 +120,7 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 
 @media (max-width: 900px) {
   .profile-stack { grid-template-columns: 1fr; }
-  .profile-stack > :first-child { grid-column: auto; }
+  .profile-stack > :first-child, .profile-form, .sharing-setup-note { grid-column: auto; }
 }
 @media (max-width: 670px) {
   .sidebar nav { grid-template-columns: repeat(3, 1fr); }
@@ -127,8 +131,14 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .family-card { grid-template-columns: 31px minmax(0, 1fr) auto auto; }
   .medicine-media-tools { align-items: stretch; }
   .medicine-media-tools .outline-button { flex: 1; }
-  .topbar-lock { margin-left: auto; padding: 0 8px; }
+  .topbar { gap: 8px; }
+  .topbar > strong { flex: 1 1 0; font-size: 12px; }
+  .topbar-lock { margin-left: 0; padding: 0 8px; }
   .topbar-lock span { display: none; }
+}
+
+@media (max-width: 430px) {
+  .shared-cabinet-indicator { display: none; }
 }
 
 /* Stable viewport, keyboard, and focus behaviour. */

@@ -28,6 +28,7 @@ export type HouseholdAccessState = {
   owner_user_id: string;
   role: 'owner' | 'editor';
   invite_code?: string | null;
+  household_name?: string;
 };
 
 export type HouseholdSharingPanelProps = {
@@ -156,6 +157,7 @@ function toAccessState(household: HouseholdDetails): HouseholdAccessState {
     owner_user_id: household.ownerUserId,
     role: household.currentRole === 'owner' ? 'owner' : 'editor',
     invite_code: household.inviteCode || null,
+    household_name: household.name,
   };
 }
 

@@ -21,6 +21,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef
 import { AuthScreen } from './AuthScreen';
 import { FamilyPanel } from './FamilyPanel';
 import { MedicinePhotoUploader } from './MedicineMedia';
+import { HouseholdSharingPanel, type HouseholdAccessState } from './components/HouseholdSharingPanel';
 import { NotificationSettings } from './components/NotificationSettings';
 import { PinLockGate, PinLockSettings, usePinLock } from './components/PinLockGate';
 import { clearLocalPin } from './lib/localPin';
@@ -212,6 +213,36 @@ function errorText(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+function householdAccessFromRpc(value: unknown): HouseholdAccessState | null {
+  const root = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
+  const embedded = asRecord(root.household) ?? asRecord(root.data) ?? root;
+  const householdId = stringValue(embedded.household_id ?? embedded.id ?? root.household_id ?? root.id);
+  const ownerUserId = stringValue(
+    embedded.owner_user_id ?? embedded.owner_id ?? root.owner_user_id ?? root.owner_id,
+  );
+  if (!householdId || !ownerUserId) return null;
+
+  const rawRole = stringValue(embedded.current_role ?? embedded.role ?? root.current_role ?? root.role).toLowerCase();
+  return {
+    household_id: householdId,
+    owner_user_id: ownerUserId,
+    role: rawRole === 'owner' ? 'owner' : 'editor',
+    invite_code: stringValue(embedded.invite_code ?? root.invite_code) || null,
+    household_name: stringValue(
+      embedded.household_name ?? embedded.name ?? root.household_name ?? root.name,
+    ),
+  };
+}
+
+function householdMigrationIsMissing(error: unknown): boolean {
+  const record = asRecord(error);
+  const code = stringValue(record.code);
+  const message = errorText(error, '').toLowerCase();
+  return code === 'PGRST202'
+    || (message.includes('home_meds_get_household')
+      && (message.includes('could not find') || message.includes('does not exist') || message.includes('schema cache')));
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -552,50 +583,103 @@ function Workspace({ user }: { user: User }) {
   const [modal, setModal] = useState<ReactNode>(null);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
+  const [householdAccess, setHouseholdAccess] = useState<HouseholdAccessState | null>(null);
+  const [sharingAvailable, setSharingAvailable] = useState<boolean | null>(null);
 
   const reportError = useCallback((message: string) => setSyncError(message), []);
+  const dataOwnerId = householdAccess?.owner_user_id ?? user.id;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
+    if (!background) setLoading(true);
     const client = supabase!;
-    const [itemsResult, tripsResult, profileResult, membersResult] = await Promise.all([
-      client.from('home_meds_items').select('id, kind, payload').eq('user_id', user.id).order('created_at', { ascending: false }),
-      client.from('home_meds_trips').select('*').eq('user_id', user.id).order('starts_on', { ascending: true, nullsFirst: false }),
-      client.from('home_meds_profiles').select('*').eq('user_id', user.id).maybeSingle(),
-      client.from('home_meds_members').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
-    ]);
+    try {
+      const { data: householdData, error: householdError } = await client.rpc('home_meds_get_household');
+      let nextHousehold: HouseholdAccessState | null = null;
+      let nextDataOwnerId = user.id;
 
-    const firstError = [itemsResult.error, tripsResult.error, profileResult.error, membersResult.error].find(Boolean);
-    if (firstError) reportError('Не вдалося завантажити всі дані: ' + errorText(firstError, 'перевірте підключення.'));
+      if (householdError) {
+        if (householdMigrationIsMissing(householdError)) {
+          setSharingAvailable(false);
+        } else {
+          setSharingAvailable(null);
+          reportError('Не вдалося перевірити спільний доступ: ' + errorText(householdError, 'спробуйте оновити сторінку.'));
+          return;
+        }
+      } else {
+        setSharingAvailable(true);
+        nextHousehold = householdAccessFromRpc(householdData);
+        nextDataOwnerId = nextHousehold?.owner_user_id ?? user.id;
+      }
+      setHouseholdAccess(nextHousehold);
 
-    const rows = (itemsResult.data ?? []) as StoredItem[];
-    const loadedMedicines = rows
-      .filter((item) => item.kind === 'medicine')
-      .map((item) => normalizeMedicine(item.payload, item.id));
-    const loadedItems = rows
-      .filter((item) => item.kind === 'travel')
-      .map((item) => normalizeTripItem(item.payload, item.id));
-    const loadedTrips = (tripsResult.data ?? []) as Trip[];
-    const loadedMembers = (membersResult.data ?? []) as FamilyMember[];
-    const loadedProfile = profileResult.data as Partial<Profile> | null;
+      const [itemsResult, tripsResult, profileResult, membersResult] = await Promise.all([
+        client.from('home_meds_items').select('id, kind, payload').eq('user_id', nextDataOwnerId).order('created_at', { ascending: false }),
+        client.from('home_meds_trips').select('*').eq('user_id', nextDataOwnerId).order('starts_on', { ascending: true, nullsFirst: false }),
+        client.from('home_meds_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+        client.from('home_meds_members').select('*').eq('user_id', nextDataOwnerId).order('created_at', { ascending: true }),
+      ]);
 
-    setMedicines(loadedMedicines);
-    setTripItems(loadedItems);
-    setTrips(loadedTrips);
-    setMembers(loadedMembers);
-    if (loadedProfile) {
-      setProfile({
-        user_id: user.id,
-        display_name: stringValue(loadedProfile.display_name),
-        household_name: stringValue(loadedProfile.household_name, 'Моя аптечка'),
-      });
+      const firstError = [itemsResult.error, tripsResult.error, profileResult.error, membersResult.error].find(Boolean);
+      if (firstError) reportError('Не вдалося завантажити всі дані: ' + errorText(firstError, 'перевірте підключення.'));
+
+      const rows = (itemsResult.data ?? []) as StoredItem[];
+      const loadedMedicines = rows
+        .filter((item) => item.kind === 'medicine')
+        .map((item) => normalizeMedicine(item.payload, item.id));
+      const loadedItems = rows
+        .filter((item) => item.kind === 'travel')
+        .map((item) => normalizeTripItem(item.payload, item.id));
+      const loadedTrips = (tripsResult.data ?? []) as Trip[];
+      const loadedMembers = (membersResult.data ?? []) as FamilyMember[];
+      const loadedProfile = profileResult.data as Partial<Profile> | null;
+
+      setMedicines(loadedMedicines);
+      setTripItems(loadedItems);
+      setTrips(loadedTrips);
+      setMembers(loadedMembers);
+      setProfile(loadedProfile
+        ? {
+            user_id: user.id,
+            display_name: stringValue(loadedProfile.display_name),
+            household_name: stringValue(
+              nextHousehold?.household_name,
+              stringValue(loadedProfile.household_name, 'Моя аптечка'),
+            ),
+          }
+        : {
+            user_id: user.id,
+            display_name: '',
+            household_name: stringValue(nextHousehold?.household_name, 'Моя аптечка'),
+          });
+      setActiveTripId((current) => loadedTrips.some((trip) => trip.id === current) ? current : (loadedTrips[0]?.id ?? ''));
+    } catch (error) {
+      reportError('Не вдалося завантажити аптечку: ' + errorText(error, 'перевірте підключення та спробуйте ще раз.'));
+    } finally {
+      if (!background) setLoading(false);
     }
-    setActiveTripId((current) => loadedTrips.some((trip) => trip.id === current) ? current : (loadedTrips[0]?.id ?? ''));
-    setLoading(false);
   }, [reportError, user.id]);
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load({ background: true });
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [load]);
+
+  const handleHouseholdChange = useCallback((nextHousehold: HouseholdAccessState | null) => {
+    setHouseholdAccess(nextHousehold);
+    // The panel refreshes itself on mount; keep that silent so opening
+    // “Профіль” does not make the whole app jump back to a loading screen.
+    void load({ background: true });
   }, [load]);
 
   const saveMedicine = async (input: Med): Promise<boolean> => {
@@ -628,7 +712,7 @@ function Workspace({ user }: { user: User }) {
     setMedicines((current) => [next, ...current.filter((medicine) => medicine.id !== next.id)]);
     const { error } = await supabase!.from('home_meds_items').upsert({
       id: next.id,
-      user_id: user.id,
+      user_id: dataOwnerId,
       kind: 'medicine',
       payload: next,
     });
@@ -651,7 +735,7 @@ function Workspace({ user }: { user: User }) {
     if (!window.confirm('Видалити «' + medicine.name + '» з аптечки?')) return;
     const previous = medicines;
     setMedicines((current) => current.filter((item) => item.id !== medicine.id));
-    const { error } = await supabase!.from('home_meds_items').delete().eq('id', medicine.id);
+    const { error } = await supabase!.from('home_meds_items').delete().eq('id', medicine.id).eq('user_id', dataOwnerId);
     if (error) {
       setMedicines(previous);
       reportError('Не вдалося видалити ліки: ' + errorText(error, 'спробуйте ще раз.'));
@@ -682,7 +766,7 @@ function Workspace({ user }: { user: User }) {
     const previous = trips;
     setTrips((current) => [next, ...current.filter((trip) => trip.id !== next.id)]);
     setActiveTripId(next.id);
-    const { error } = await supabase!.from('home_meds_trips').upsert({ ...next, user_id: user.id });
+    const { error } = await supabase!.from('home_meds_trips').upsert({ ...next, user_id: dataOwnerId });
     if (error) {
       setTrips(previous);
       reportError('Подорож не збережено: ' + errorText(error, 'спробуйте ще раз.'));
@@ -701,8 +785,8 @@ function Workspace({ user }: { user: User }) {
     setActiveTripId((current) => current === trip.id ? '' : current);
 
     const results = await Promise.all([
-      supabase!.from('home_meds_trips').delete().eq('id', trip.id),
-      ...relatedItems.map((item) => supabase!.from('home_meds_items').delete().eq('id', item.id)),
+      supabase!.from('home_meds_trips').delete().eq('id', trip.id).eq('user_id', dataOwnerId),
+      ...relatedItems.map((item) => supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId)),
     ]);
     const failure = results.find((result) => result.error)?.error;
     if (failure) {
@@ -727,7 +811,7 @@ function Workspace({ user }: { user: User }) {
     setTripItems((current) => [next, ...current.filter((item) => item.id !== next.id)]);
     const { error } = await supabase!.from('home_meds_items').upsert({
       id: next.id,
-      user_id: user.id,
+      user_id: dataOwnerId,
       kind: 'travel',
       payload: next,
     });
@@ -743,7 +827,7 @@ function Workspace({ user }: { user: User }) {
     if (!window.confirm('Видалити «' + item.title + '» зі списку?')) return;
     const previous = tripItems;
     setTripItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
-    const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id);
+    const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId);
     if (error) {
       setTripItems(previous);
       reportError('Не вдалося видалити пункт: ' + errorText(error, 'спробуйте ще раз.'));
@@ -754,19 +838,31 @@ function Workspace({ user }: { user: User }) {
     event.preventDefault();
     const next = {
       ...profile,
+      user_id: user.id,
       display_name: profile.display_name.trim(),
       household_name: profile.household_name.trim() || 'Моя аптечка',
     };
-    const { error } = await supabase!.from('home_meds_profiles').upsert(next);
-    if (error) {
-      reportError('Профіль не збережено: ' + errorText(error, 'спробуйте ще раз.'));
+
+    const profileRequest = supabase!.from('home_meds_profiles').upsert(next);
+    const householdRequest = householdAccess
+      ? supabase!.rpc('home_meds_update_household_name', { new_name: next.household_name })
+      : Promise.resolve({ error: null });
+    const [profileResult, householdResult] = await Promise.all([profileRequest, householdRequest]);
+
+    if (profileResult.error || householdResult.error) {
+      const error = profileResult.error ?? householdResult.error;
+      reportError('Налаштування не збережено: ' + errorText(error, 'спробуйте ще раз.'));
       return;
     }
     setProfile(next);
+    if (householdAccess) {
+      setHouseholdAccess({ ...householdAccess, household_name: next.household_name });
+    }
   };
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0] ?? null;
   const activeTripItems = activeTrip ? tripItems.filter((item) => item.tripId === activeTrip.id) : [];
+  const sharedCabinet = householdAccess !== null;
   const pendingPurchases = medicines.filter((medicine) => isLowStock(medicine) && medicine.shoppingStatus !== 'done');
   const completedPurchases = medicines.filter((medicine) => isLowStock(medicine) && medicine.shoppingStatus === 'done');
   const expiryAttention = medicines.filter((medicine) => {
@@ -780,7 +876,7 @@ function Workspace({ user }: { user: User }) {
       members={members}
       onClose={() => setModal(null)}
       onSave={saveMedicine}
-      userId={user.id}
+      userId={dataOwnerId}
       value={medicine}
     />,
   );
@@ -795,7 +891,10 @@ function Workspace({ user }: { user: User }) {
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">+</span>home <b>meds</b></div>
       <nav aria-label="Основна навігація">
-        {navigation.map(({ id, label, Icon }) => <button className={'nav-link ' + (tab === id ? 'active' : '')} key={id} onClick={() => setTab(id)} type="button">
+        {navigation.map(({ id, label, Icon }) => <button className={'nav-link ' + (tab === id ? 'active' : '')} key={id} onClick={() => {
+          setTab(id);
+          void load({ background: true });
+        }} type="button">
           <Icon size={18} />{label}
         </button>)}
       </nav>
@@ -804,6 +903,7 @@ function Workspace({ user }: { user: User }) {
       <header className="topbar">
         <div className="mobile-brand"><span className="brand-mark">+</span>home <b>meds</b></div>
         <strong>{profile.household_name}</strong>
+        {sharedCabinet && <span className="shared-cabinet-indicator">Спільна</span>}
         <button className="topbar-lock" onClick={lock} title="Заблокувати аптечку" type="button"><LockKeyhole size={16} /><span>Заблокувати</span></button>
         <button aria-label="Вийти з акаунта" className="profile" onClick={() => void supabase!.auth.signOut()} title="Вийти" type="button">
           {(profile.display_name || user.email || 'Я').slice(0, 1).toUpperCase()}
@@ -949,13 +1049,19 @@ function Workspace({ user }: { user: User }) {
           </div>
         </div>
         <div className="profile-stack">
+          {sharingAvailable === true && <HouseholdSharingPanel onHouseholdChange={handleHouseholdChange} userId={user.id} />}
+          {sharingAvailable === false && <section className="panel sharing-setup-note">
+            <p className="eyebrow">СПІЛЬНИЙ ДОСТУП</p>
+            <h2>Родинна аптечка готова до підключення</h2>
+            <p className="subtext">Запустіть останню міграцію Supabase, і тут з’явиться код запрошення для рідних. Особисті дані залишаться приватними.</p>
+          </section>}
           <form className="panel profile-form" onSubmit={(event) => void saveProfile(event)}>
             <div className="panel-title"><div><p className="eyebrow">ВАША АПТЕЧКА</p><h2>Основні дані</h2></div></div>
-            <Field label="Ім’я"><input value={profile.display_name} onChange={(event) => setProfile((current) => ({ ...current, display_name: event.target.value }))} /></Field>
-            <Field label="Назва аптечки"><input value={profile.household_name} onChange={(event) => setProfile((current) => ({ ...current, household_name: event.target.value }))} /></Field>
+            <Field label="Ім’я для цього акаунта"><input value={profile.display_name} onChange={(event) => setProfile((current) => ({ ...current, display_name: event.target.value }))} /></Field>
+            <Field label={sharedCabinet ? 'Назва спільної аптечки' : 'Назва аптечки'} hint={sharedCabinet ? 'Цю назву бачать усі учасники з доступом.' : undefined}><input value={profile.household_name} onChange={(event) => setProfile((current) => ({ ...current, household_name: event.target.value }))} /></Field>
             <button className="primary-button" type="submit">Зберегти профіль</button>
           </form>
-          <FamilyPanel onMembersChange={setMembers} userId={user.id} />
+          <FamilyPanel onMembersChange={setMembers} userId={dataOwnerId} />
           <NotificationSettings medicines={medicines} userId={user.id} />
           <PinLockSettings userId={user.id} />
         </div>
