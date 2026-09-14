@@ -2,8 +2,11 @@ import { createContext, type FormEvent, type ReactNode, useCallback, useContext,
 import {
   LOCAL_PIN_CHANGE_EVENT,
   clearLocalPin,
+  clearLocalPinFailures,
+  getLocalPinRetryStatus,
   hasLocalPin,
   isLocalPinSupported,
+  recordLocalPinFailure,
   setLocalPin,
   type LocalPinChangeDetail,
   validatePin,
@@ -64,10 +67,15 @@ function PinField({ value, onChange, label, autoFocus = false }: { value: string
   </label>;
 }
 
+function retryLabel(retryAfterMs: number): string {
+  return `${Math.max(1, Math.ceil(retryAfterMs / 1000))} с`;
+}
+
 function LockScreen({
   appName,
   mode,
   busy,
+  retryAfterMs,
   error,
   notice,
   pin,
@@ -80,6 +88,7 @@ function LockScreen({
   appName: string;
   mode: 'setup' | 'locked';
   busy: boolean;
+  retryAfterMs: number;
   error: string;
   notice: string;
   pin: string;
@@ -103,11 +112,11 @@ function LockScreen({
         {setup && <PinField label="Повторіть PIN" onChange={onConfirmation} value={confirmation} />}
         {error && <p aria-live="polite" className="pin-lock-message pin-lock-error">{error}</p>}
         {notice && <p aria-live="polite" className="pin-lock-message pin-lock-notice">{notice}</p>}
-        <button className="pin-lock-submit" disabled={busy} type="submit">
-          {busy ? 'Зачекайте…' : setup ? 'Увімкнути PIN-замок' : 'Розблокувати'}
+        <button className="pin-lock-submit" disabled={busy || retryAfterMs > 0} type="submit">
+          {busy ? 'Зачекайте…' : retryAfterMs > 0 ? `Спробуйте за ${retryLabel(retryAfterMs)}` : setup ? 'Увімкнути PIN-замок' : 'Розблокувати'}
         </button>
       </form>
-      {!setup && onForgotPin && <button className="pin-lock-link" disabled={busy} onClick={onForgotPin} type="button">Забули PIN?</button>}
+      {!setup && onForgotPin && <button className="pin-lock-link" disabled={busy} onClick={onForgotPin} type="button">Забули PIN? Вийти й відновити через email</button>}
       {setup && <p className="pin-lock-footnote">PIN зберігається лише в цьому браузері. Не використовуйте PIN від банківської картки.</p>}
     </section>
   </main>;
@@ -132,6 +141,7 @@ export function PinLockGate({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [retryAfterMs, setRetryAfterMs] = useState(0);
 
   const resetFields = useCallback(() => {
     setPin('');
@@ -142,6 +152,7 @@ export function PinLockGate({
   useEffect(() => {
     resetFields();
     setNotice('');
+    setRetryAfterMs(0);
     if (!isLocalPinSupported()) {
       setHasPin(false);
       setPhase('unlocked');
@@ -151,6 +162,17 @@ export function PinLockGate({
     setHasPin(configured);
     setPhase(configured ? 'locked' : 'setup');
   }, [resetFields, userId]);
+
+  useEffect(() => {
+    if (phase !== 'locked') {
+      setRetryAfterMs(0);
+      return;
+    }
+    const refresh = () => setRetryAfterMs(getLocalPinRetryStatus(userId).retryAfterMs);
+    refresh();
+    const timer = window.setInterval(refresh, 500);
+    return () => window.clearInterval(timer);
+  }, [phase, userId]);
 
   useEffect(() => {
     const updatePinState = (event: Event) => {
@@ -225,19 +247,31 @@ export function PinLockGate({
     }
 
     if (phase !== 'locked') return;
+    const retry = getLocalPinRetryStatus(userId);
+    if (retry.retryAfterMs > 0) {
+      setRetryAfterMs(retry.retryAfterMs);
+      return setError(`Для захисту зачекайте ${retryLabel(retry.retryAfterMs)} перед наступною спробою.`);
+    }
     const validationError = validatePin(pin);
     if (validationError) return setError(validationError);
     setBusy(true);
     try {
       const result = await verifyLocalPin(userId, pin);
       if (result === 'valid') {
+        clearLocalPinFailures(userId);
+        setRetryAfterMs(0);
         unlock();
       } else if (result === 'not-configured') {
         setHasPin(false);
         setPhase('setup');
         setNotice('Створіть новий PIN для цього браузера.');
       } else {
-        setError('Невірний PIN. Спробуйте ще раз.');
+        const nextRetry = recordLocalPinFailure(userId);
+        setRetryAfterMs(nextRetry.retryAfterMs);
+        setPin('');
+        setError(nextRetry.retryAfterMs > 0
+          ? `Невірний PIN. Для захисту зачекайте ${retryLabel(nextRetry.retryAfterMs)}.`
+          : 'Невірний PIN. Спробуйте ще раз.');
       }
     } finally {
       setBusy(false);
@@ -291,6 +325,7 @@ export function PinLockGate({
           onPin={setPin}
           onSubmit={(event) => void submit(event)}
           pin={pin}
+          retryAfterMs={retryAfterMs}
         />}
   </PinLockContext.Provider>;
 }
@@ -325,6 +360,24 @@ export function PinLockSettings({ userId, className = '' }: { userId: string; cl
     setError('');
   };
 
+  const verifyCurrentPin = async (invalidMessage: string): Promise<boolean> => {
+    const retry = getLocalPinRetryStatus(userId);
+    if (retry.retryAfterMs > 0) {
+      setError(`Для захисту зачекайте ${retryLabel(retry.retryAfterMs)} перед наступною спробою.`);
+      return false;
+    }
+    const verified = await verifyLocalPin(userId, currentPin);
+    if (verified === 'valid') {
+      clearLocalPinFailures(userId);
+      return true;
+    }
+    const nextRetry = recordLocalPinFailure(userId);
+    setError(nextRetry.retryAfterMs > 0
+      ? `${invalidMessage} Зачекайте ${retryLabel(nextRetry.retryAfterMs)}.`
+      : invalidMessage);
+    return false;
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
@@ -332,8 +385,7 @@ export function PinLockSettings({ userId, className = '' }: { userId: string; cl
     setBusy(true);
     try {
       if (mode === 'remove') {
-        const verified = await verifyLocalPin(userId, currentPin);
-        if (verified !== 'valid') return setError('Введіть чинний PIN, щоб вимкнути замок.');
+        if (!await verifyCurrentPin('Введіть чинний PIN, щоб вимкнути замок.')) return;
         clearLocalPin(userId);
         setConfigured(false);
         cancel();
@@ -345,8 +397,7 @@ export function PinLockSettings({ userId, className = '' }: { userId: string; cl
       if (validationError) return setError(validationError);
       if (newPin !== confirmation) return setError('Нові PIN не збігаються.');
       if (mode === 'change') {
-        const verified = await verifyLocalPin(userId, currentPin);
-        if (verified !== 'valid') return setError('Введіть чинний PIN, щоб його змінити.');
+        if (!await verifyCurrentPin('Введіть чинний PIN, щоб його змінити.')) return;
       }
       await setLocalPin(userId, newPin);
       setConfigured(true);
