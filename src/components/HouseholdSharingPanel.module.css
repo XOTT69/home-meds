@@ -293,6 +293,17 @@
   color: #8a622d;
 }
 
+.roleSelect {
+  min-width: 112px;
+  height: 31px;
+  border: 1px solid #d6e2da;
+  border-radius: 7px;
+  background: #fff;
+  color: #42665a;
+  font: 700 10px/1 inherit;
+  padding: 0 6px;
+}
+
 .loading {
   display: inline-flex;
   align-items: center;
@@ -318,6 +329,7 @@
   .joinForm .primaryButton { width: 100%; }
   .inviteRow { align-items: stretch; }
   .copyButton { min-width: 39px; padding: 0 10px; }
+  .roleSelect { min-width: 0; max-width: 112px; }
   .copyButton span { display: none; }
   .member { gap: 8px; padding: 10px; }
   .memberRole { margin-left: 0; }

@@ -26,7 +26,7 @@ export type HouseholdDetails = {
 export type HouseholdAccessState = {
   household_id: string;
   owner_user_id: string;
-  role: 'owner' | 'editor';
+  role: 'owner' | 'editor' | 'viewer';
   invite_code?: string | null;
   household_name?: string;
 };
@@ -79,12 +79,14 @@ function normalizeRole(value: string): string {
   const role = value.trim().toLowerCase();
   if (role === 'owner' || role === 'admin') return 'owner';
   if (role === 'editor' || role === 'write') return 'editor';
+  if (role === 'viewer' || role === 'view' || role === 'read') return 'viewer';
   return 'member';
 }
 
 function roleLabel(role: string): string {
   if (role === 'owner') return 'Власник';
   if (role === 'editor') return 'Редактор';
+  if (role === 'viewer') return 'Лише перегляд';
   return 'Учасник';
 }
 
@@ -155,7 +157,7 @@ function toAccessState(household: HouseholdDetails): HouseholdAccessState {
   return {
     household_id: household.id,
     owner_user_id: household.ownerUserId,
-    role: household.currentRole === 'owner' ? 'owner' : 'editor',
+    role: household.currentRole === 'owner' ? 'owner' : household.currentRole === 'viewer' ? 'viewer' : 'editor',
     invite_code: household.inviteCode || null,
     household_name: household.name,
   };
@@ -193,6 +195,7 @@ export function HouseholdSharingPanel({ userId, className, onHouseholdChange }: 
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
   const [message, setMessage] = useState<Message>(null);
 
   const refreshHousehold = useCallback(async (showSuccess = false) => {
@@ -307,6 +310,23 @@ export function HouseholdSharingPanel({ userId, className, onHouseholdChange }: 
       : { text: 'Не вдалося скопіювати автоматично. Виділіть код і скопіюйте його вручну.', error: true });
   };
 
+  const updateMemberRole = async (member: HouseholdCollaborator, nextRole: 'editor' | 'viewer') => {
+    if (!supabase || !isOwner || member.userId === userId || member.role === nextRole) return;
+    setUpdatingRoleUserId(member.userId);
+    setMessage(null);
+    const { error } = await supabase.rpc('home_meds_update_household_member_role', {
+      member_user_id: member.userId,
+      new_role: nextRole,
+    });
+    setUpdatingRoleUserId(null);
+    if (error) {
+      setMessage({ text: getErrorMessage(error, 'Не вдалося змінити роль учасника.'), error: true });
+      return;
+    }
+    setMessage({ text: `${member.name}: ${roleLabel(nextRole)}.` });
+    await refreshHousehold();
+  };
+
   const panelClassName = [styles.panel, className].filter(Boolean).join(' ');
   const loading = isLoading || isCreating || isJoining;
 
@@ -342,7 +362,7 @@ export function HouseholdSharingPanel({ userId, className, onHouseholdChange }: 
                 <button className={styles.copyButton} onClick={() => void copyInviteCode()} type="button"><ClipboardCopy size={15} /><span>Копіювати</span></button>
               </div> : <p className={styles.description}>Код запрошення ще не створено. Оновіть дані або створіть сімейний простір заново.</p>}
             </div>}
-            {!isOwner && <p className={styles.description}>Власник керує кодом запрошення та доступом учасників. Ви можете додавати й редагувати спільні дані аптечки.</p>}
+            {!isOwner && <p className={styles.description}>{household.currentRole === 'viewer' ? 'У вас доступ лише для перегляду. Власник може змінити роль у списку учасників.' : 'Власник керує кодом запрошення та доступом учасників. Ви можете додавати й редагувати спільні дані аптечки.'}</p>}
           </div>
 
           <div className={styles.memberSection}>
@@ -352,13 +372,17 @@ export function HouseholdSharingPanel({ userId, className, onHouseholdChange }: 
                 const memberIsOwner = member.role === 'owner' || member.userId === household.ownerUserId;
                 const canRemove = isOwner && !memberIsOwner && member.userId !== userId;
                 const removing = removingUserId === member.userId;
+                const changingRole = updatingRoleUserId === member.userId;
                 return <div className={styles.member} key={member.userId}>
                   <span aria-hidden="true" className={styles.avatar}>{initials(member.name)}</span>
                   <div className={styles.memberCopy}>
                     <span className={styles.memberName}>{member.userId === userId ? `${member.name} (ви)` : member.name}</span>
                     {member.email && <span className={styles.memberMeta}>{member.email}</span>}
                   </div>
-                  <span className={`${styles.memberRole} ${memberIsOwner ? styles.memberRoleOwner : ''}`}>{roleLabel(memberIsOwner ? 'owner' : member.role)}</span>
+                  {isOwner && !memberIsOwner ? <select aria-label={`Роль ${member.name}`} className={styles.roleSelect} disabled={changingRole || removing} onChange={(event) => void updateMemberRole(member, event.target.value as 'editor' | 'viewer')} value={member.role === 'viewer' ? 'viewer' : 'editor'}>
+                    <option value="editor">Редактор</option>
+                    <option value="viewer">Лише перегляд</option>
+                  </select> : <span className={`${styles.memberRole} ${memberIsOwner ? styles.memberRoleOwner : ''}`}>{roleLabel(memberIsOwner ? 'owner' : member.role)}</span>}
                   {canRemove && <button aria-label={`Прибрати ${member.name}`} className={styles.removeButton} disabled={removing} onClick={() => void removeMember(member)} type="button">
                     {removing ? <LoaderCircle className={styles.spin} size={15} /> : <Trash2 size={15} />}
                   </button>}

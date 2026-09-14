@@ -7,7 +7,7 @@ type MemberDraft = Omit<Member, 'id' | 'user_id'>;
 
 const emptyDraft = (): MemberDraft => ({ name: '', relation: '', allergies: '', notes: '' });
 
-export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMembersChange?: (members: Member[]) => void }) {
+export function FamilyPanel({ userId, onMembersChange, readOnly = false }: { userId: string; onMembersChange?: (members: Member[]) => void; readOnly?: boolean }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [draft, setDraft] = useState<MemberDraft>(emptyDraft);
   const [open, setOpen] = useState(false);
@@ -43,6 +43,7 @@ export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMem
   };
 
   const add = () => {
+    if (readOnly) return;
     setEditingId(null);
     setDraft(emptyDraft());
     setError('');
@@ -50,6 +51,7 @@ export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMem
   };
 
   const edit = (member: Member) => {
+    if (readOnly) return;
     setEditingId(member.id);
     setDraft({ name: member.name, relation: member.relation, allergies: member.allergies, notes: member.notes });
     setError('');
@@ -58,7 +60,7 @@ export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMem
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!supabase) return;
+    if (!supabase || readOnly) return;
 
     const name = draft.name.trim();
     if (!name) {
@@ -116,7 +118,7 @@ export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMem
   };
 
   const remove = async (member: Member) => {
-    if (!supabase || !confirm(`Видалити профіль «${member.name}»?`)) return;
+    if (!supabase || readOnly || !confirm(`Видалити профіль «${member.name}»?`)) return;
     setDeletingId(member.id);
     setError('');
     const { error: deleteError } = await supabase.from('home_meds_members').delete().eq('id', member.id).eq('user_id', userId);
@@ -132,5 +134,5 @@ export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMem
     });
   };
 
-  return <section className="panel family-panel"><div className="panel-title"><div><p className="eyebrow">ВАША РОДИНА</p><h2>Для кого аптечка</h2></div><button type="button" className="outline-button" onClick={add}><Plus size={16} /> Додати</button></div>{error && !open && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}{members.length ? <div className="family-grid">{members.map((member) => <article className="family-card" key={member.id}><span><UsersRound size={18} /></span><div><strong>{member.name}</strong><small>{member.relation || 'Член родини'}</small>{member.allergies && <p>Алергії: {member.allergies}</p>}{member.notes && <p>Примітки: {member.notes}</p>}</div><button type="button" className="dots" aria-label={`Редагувати ${member.name}`} onClick={() => edit(member)}><Edit3 size={16} /></button><button type="button" className="dots danger-action" aria-label={`Видалити ${member.name}`} disabled={deletingId === member.id} onClick={() => void remove(member)}>{deletingId === member.id ? <LoaderCircle size={16} className="spin" /> : <Trash2 size={16} />}</button></article>)}</div> : <p className="subtext">Додайте членів родини, щоб зберігати важливі застереження.</p>}{open && <div className="modal-backdrop" onMouseDown={() => close()}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={save}><div className="modal-head"><h2>{editingId ? 'Редагувати профіль' : 'Новий профіль'}</h2></div><label>Ім’я<input required autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>Хто це<input value={draft.relation} onChange={(event) => setDraft({ ...draft, relation: event.target.value })} placeholder="Наприклад, дитина" /></label><label>Алергії<input value={draft.allergies} onChange={(event) => setDraft({ ...draft, allergies: event.target.value })} placeholder="Лише відомі застереження" /></label><label>Примітки<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>{error && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}<button className="primary-button full" disabled={isSaving}>{isSaving ? 'Зберігаємо…' : 'Зберегти'}</button><button type="button" className="auth-text-button" disabled={isSaving} onClick={() => close()}>Скасувати</button></form></div>}</section>;
+  return <section className="panel family-panel"><div className="panel-title"><div><p className="eyebrow">ВАША РОДИНА</p><h2>Для кого аптечка</h2></div>{!readOnly && <button type="button" className="outline-button" onClick={add}><Plus size={16} /> Додати</button>}</div>{readOnly && <p className="subtext">Лише перегляд — редагування доступне власнику та редакторам.</p>}{error && !open && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}{members.length ? <div className="family-grid">{members.map((member) => <article className="family-card" key={member.id}><span><UsersRound size={18} /></span><div><strong>{member.name}</strong><small>{member.relation || 'Член родини'}</small>{member.allergies && <p>Алергії: {member.allergies}</p>}{member.notes && <p>Примітки: {member.notes}</p>}</div>{!readOnly && <><button type="button" className="dots" aria-label={`Редагувати ${member.name}`} onClick={() => edit(member)}><Edit3 size={16} /></button><button type="button" className="dots danger-action" aria-label={`Видалити ${member.name}`} disabled={deletingId === member.id} onClick={() => void remove(member)}>{deletingId === member.id ? <LoaderCircle size={16} className="spin" /> : <Trash2 size={16} />}</button></>}</article>)}</div> : <p className="subtext">Додайте членів родини, щоб зберігати важливі застереження.</p>}{open && <div className="modal-backdrop" onMouseDown={() => close()}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={save}><div className="modal-head"><h2>{editingId ? 'Редагувати профіль' : 'Новий профіль'}</h2></div><label>Ім’я<input required autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>Хто це<input value={draft.relation} onChange={(event) => setDraft({ ...draft, relation: event.target.value })} placeholder="Наприклад, дитина" /></label><label>Алергії<input value={draft.allergies} onChange={(event) => setDraft({ ...draft, allergies: event.target.value })} placeholder="Лише відомі застереження" /></label><label>Примітки<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>{error && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}<button className="primary-button full" disabled={isSaving}>{isSaving ? 'Зберігаємо…' : 'Зберегти'}</button><button type="button" className="auth-text-button" disabled={isSaving} onClick={() => close()}>Скасувати</button></form></div>}</section>;
 }
