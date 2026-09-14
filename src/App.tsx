@@ -7,7 +7,6 @@ import {
   Edit3,
   FileDown,
   ImageIcon,
-  LockKeyhole,
   MapPinned,
   Pill,
   Plus,
@@ -27,8 +26,6 @@ import { MedicinePhotoUploader } from './MedicineMedia';
 import { HouseholdSharingPanel, type HouseholdAccessState } from './components/HouseholdSharingPanel';
 import { ActivityPanel } from './components/ActivityPanel';
 import { NotificationSettings } from './components/NotificationSettings';
-import { PinLockGate, PinLockSettings, usePinLock } from './components/PinLockGate';
-import { clearLocalPin } from './lib/localPin';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 
 type MedicineShoppingStatus = 'pending' | 'done';
@@ -638,7 +635,6 @@ function AddMedicineToTrip({
 }
 
 function Workspace({ user }: { user: User }) {
-  const { lock } = usePinLock();
   const [tab, setTab] = useState<'meds' | 'trips' | 'profile'>('meds');
   const [medicines, setMedicines] = useState<Med[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -1019,7 +1015,6 @@ function Workspace({ user }: { user: User }) {
         <div className="mobile-brand"><span className="brand-mark">+</span>home <b>meds</b></div>
         <strong>{profile.household_name}</strong>
         {sharedCabinet && <span className="shared-cabinet-indicator">Спільна</span>}
-        <button className="topbar-lock" onClick={lock} title="Заблокувати аптечку" type="button"><LockKeyhole size={16} /><span>Заблокувати</span></button>
         <button aria-label="Вийти з акаунта" className="profile" onClick={() => void supabase!.auth.signOut()} title="Вийти" type="button">
           {(profile.display_name || user.email || 'Я').slice(0, 1).toUpperCase()}
         </button>
@@ -1195,7 +1190,6 @@ function Workspace({ user }: { user: User }) {
           <FamilyPanel onMembersChange={setMembers} readOnly={!canEdit} userId={dataOwnerId} />
           <ActivityPanel currentUserId={user.id} names={new Map([[user.id, profile.display_name || 'Ви']])} ownerUserId={dataOwnerId} />
           <NotificationSettings medicines={medicines} userId={user.id} />
-          <PinLockSettings userId={user.id} />
         </div>
       </section>}
       {modal}
@@ -1226,22 +1220,9 @@ export default function App() {
     return <main className="loading-screen">Home Meds ще не підключено до безпечного сховища.</main>;
   }
 
-  if (passwordRecovery && user) {
-    return <AuthScreen recovery onRecoveryComplete={() => {
-      clearLocalPin(user.id);
-      setPasswordRecovery(false);
-    }} />;
-  }
+  if (passwordRecovery && user) return <AuthScreen recovery onRecoveryComplete={() => setPasswordRecovery(false)} />;
 
   if (!user) return <AuthScreen />;
 
-  return <PinLockGate
-    onForgotPin={async () => {
-      await supabase!.auth.signOut();
-      return false;
-    }}
-    userId={user.id}
-  >
-    <Workspace user={user} />
-  </PinLockGate>;
+  return <Workspace user={user} />;
 }

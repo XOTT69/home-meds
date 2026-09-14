@@ -106,8 +106,6 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .profile-form .panel-title { padding-bottom: 0; }
 .sharing-setup-note h2 { margin: 0; color: #304b42; font-size: 18px; }
 .sharing-setup-note .subtext { margin: -3px 0 0; }
-.topbar-lock { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #dce7e0; border-radius: 9px; background: #fff; color: #4b695e; font-size: 12px; font-weight: 700; min-height: 35px; padding: 0 10px; }
-.topbar-lock:hover { color: #1d6d5a; border-color: #bcd7cc; background: #f6faf7; }
 .topbar > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shared-cabinet-indicator { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 8px; color: #246e5b; background: #e7f4ed; font-size: 10px; font-weight: 800; }
 .family-panel { min-height: 185px; }
@@ -150,8 +148,6 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .page-actions { justify-content: flex-start; }
   .topbar { gap: 8px; }
   .topbar > strong { flex: 1 1 0; font-size: 12px; }
-  .topbar-lock { margin-left: 0; padding: 0 8px; }
-  .topbar-lock span { display: none; }
 }
 
 @media (max-width: 430px) {
@@ -178,7 +174,7 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 input, select, textarea, button { max-width: 100%; }
 @media (hover: none) and (pointer: coarse) {
   button, .check, .dots, .icon-button { -webkit-touch-callout: none; }
-  .primary-button, .outline-button, .topbar-lock { min-height: 42px; }
+  .primary-button, .outline-button { min-height: 42px; }
   .medicine-card:hover, .primary-button:hover { transform: none; }
 }
 .page h1,
@@ -240,7 +236,6 @@ input, select, textarea, button { max-width: 100%; }
   select,
   textarea { font-size: 16px; }
 
-  .pin-lock-field input[type='password'] { font-size: 22px; }
 }
 
 @media (max-width: 670px) {
