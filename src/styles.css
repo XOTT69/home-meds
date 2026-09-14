@@ -1,10 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
 
-:root { font-family: 'DM Sans', sans-serif; color: #243431; background: #f6f7f4; font-synthesis: none; }
+:root { font-family: 'DM Sans', sans-serif; color: #243431; background: #f6f7f4; font-synthesis: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
-button, input, select { font: inherit; }
-button { cursor: pointer; }
+html { min-width: 320px; min-height: 100%; overflow-x: hidden; background: #f6f7f4; }
+body { margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-x: none; }
+#root { min-height: 100vh; min-height: 100dvh; isolation: isolate; }
+img { max-width: 100%; height: auto; }
+svg { flex: 0 0 auto; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; }
+:where(button, a[href], input, select, textarea, [tabindex]):focus-visible { outline: 3px solid rgba(42, 141, 113, .55); outline-offset: 2px; }
+:where(input, select, textarea):focus-visible { border-color: #25836c; box-shadow: 0 0 0 3px rgba(52, 153, 123, .16); }
 .app-shell { min-height: 100vh; display: flex; }
 .sidebar { width: 252px; padding: 27px 16px 19px; background: #fbfcfa; border-right: 1px solid #e5e8e3; display: flex; flex-direction: column; position: fixed; inset: 0 auto 0 0; z-index: 3; }
 .brand, .mobile-brand { display: flex; align-items: center; gap: 10px; color: #183f38; font-size: 21px; letter-spacing: -.8px; padding: 0 9px 31px; }
@@ -122,4 +129,128 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .medicine-media-tools .outline-button { flex: 1; }
   .topbar-lock { margin-left: auto; padding: 0 8px; }
   .topbar-lock span { display: none; }
+}
+
+/* Stable viewport, keyboard, and focus behaviour. */
+.app-shell,
+.content,
+.page,
+.page-head > *,
+.panel,
+.card-top,
+.medicine-card-top,
+.medicine-meta,
+.packing-item > div,
+.shopping-item > div { min-width: 0; }
+
+.app-shell { min-height: 100dvh; }
+.page h1,
+.modal h2,
+.family-card strong,
+.family-card small,
+.family-card p,
+.medicine-card h3,
+.medicine-note,
+.packing-item strong,
+.shopping-item strong { overflow-wrap: anywhere; }
+
+.search { min-width: 0; }
+.search:focus-within { border-color: #58a98f; box-shadow: 0 0 0 3px rgba(52, 153, 123, .14); }
+.search input:focus-visible { box-shadow: none; outline: 0; }
+
+.filter-row { overscroll-behavior-x: contain; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.filter { scroll-snap-align: start; }
+
+/* A modal keeps its own scroll area, so an opened keyboard never pushes the
+   document sideways or leaves the focused field below the visible viewport. */
+.modal-backdrop {
+  align-items: center;
+  justify-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+.modal,
+.roomy-modal {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding: 16px;
+}
+
+@supports selector(body:has(.modal-backdrop)) {
+  body:has(.modal-backdrop) { overflow: hidden; }
+}
+
+@media (max-width: 670px), (hover: none) and (pointer: coarse) {
+  /* iOS Safari zooms the page when a text control is below 16px. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea { font-size: 16px; }
+
+  .pin-lock-field input[type='password'] { font-size: 22px; }
+}
+
+@media (max-width: 670px) {
+  .sidebar {
+    height: calc(67px + env(safe-area-inset-bottom));
+    padding-bottom: max(7px, env(safe-area-inset-bottom));
+  }
+
+  .content { padding-bottom: calc(67px + env(safe-area-inset-bottom)); }
+  .page-head { align-items: center; }
+  .page-head > :first-child { flex: 1 1 180px; }
+  .page-head .primary-button { flex: 0 0 auto; }
+  .filter-row { margin-right: -2px; scroll-snap-type: x proximity; }
+
+  .modal-backdrop {
+    align-items: start;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .modal,
+  .roomy-modal {
+    width: 100%;
+    margin: 0;
+    border-radius: 14px;
+    scroll-padding: 12px;
+  }
+
+  .modal-head { gap: 12px; }
+  .modal-head h2 { min-width: 0; }
+  .family-card .dots { min-width: 30px; min-height: 30px; }
+  .sync-error { bottom: calc(80px + env(safe-area-inset-bottom)); }
+}
+
+@media (min-width: 671px) {
+  /* Keep desktop content from shifting when a modal locks the page scroll. */
+  html { scrollbar-gutter: stable; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
 }
