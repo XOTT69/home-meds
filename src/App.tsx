@@ -76,6 +76,14 @@ type TripItem = {
   sourceMedicineId?: string;
 };
 
+type ManualShoppingItem = {
+  id: string;
+  title: string;
+  quantity: string;
+  note: string;
+  done: boolean;
+};
+
 type Profile = {
   user_id: string;
   display_name: string;
@@ -132,6 +140,13 @@ const newTripItem = (tripId: string): TripItem => ({
   packed: false,
   needBuy: false,
   bought: false,
+});
+const newManualShoppingItem = (): ManualShoppingItem => ({
+  id: createId(),
+  title: '',
+  quantity: '',
+  note: '',
+  done: false,
 });
 
 const tripTemplates: Record<TripTemplate, { label: string; hint: string; items: Array<{ title: string; category: string; note: string }> }> = {
@@ -226,6 +241,17 @@ function normalizeTripItem(payload: unknown, fallbackId: string): TripItem {
     needBuy: booleanValue(data.needBuy),
     bought: booleanValue(data.bought),
     sourceMedicineId: stringValue(data.sourceMedicineId) || undefined,
+  };
+}
+
+function normalizeManualShoppingItem(payload: unknown, fallbackId: string): ManualShoppingItem {
+  const data = asRecord(payload);
+  return {
+    id: stringValue(data.id, fallbackId),
+    title: stringValue(data.title),
+    quantity: stringValue(data.quantity),
+    note: stringValue(data.note),
+    done: booleanValue(data.done),
   };
 }
 
@@ -639,6 +665,8 @@ function Workspace({ user }: { user: User }) {
   const [medicines, setMedicines] = useState<Med[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tripItems, setTripItems] = useState<TripItem[]>([]);
+  const [manualPurchases, setManualPurchases] = useState<ManualShoppingItem[]>([]);
+  const [manualPurchaseDraft, setManualPurchaseDraft] = useState(newManualShoppingItem);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [profile, setProfile] = useState<Profile>({ user_id: user.id, display_name: '', household_name: 'Моя аптечка' });
   const [activeTripId, setActiveTripId] = useState('');
@@ -694,6 +722,9 @@ function Workspace({ user }: { user: User }) {
       const loadedItems = rows
         .filter((item) => item.kind === 'travel')
         .map((item) => normalizeTripItem(item.payload, item.id));
+      const loadedManualPurchases = rows
+        .filter((item) => item.kind === 'shopping')
+        .map((item) => normalizeManualShoppingItem(item.payload, item.id));
       const loadedTrips = ((tripsResult.data ?? []) as Omit<Trip, 'template'>[])
         .map((trip) => ({ ...trip, template: 'custom' as TripTemplate }));
       const loadedMembers = (membersResult.data ?? []) as FamilyMember[];
@@ -701,6 +732,7 @@ function Workspace({ user }: { user: User }) {
 
       setMedicines(loadedMedicines);
       setTripItems(loadedItems);
+      setManualPurchases(loadedManualPurchases);
       setTrips(loadedTrips);
       setMembers(loadedMembers);
       setProfile(loadedProfile
@@ -919,6 +951,48 @@ function Workspace({ user }: { user: User }) {
     }
   };
 
+  const saveManualPurchase = async (input: ManualShoppingItem): Promise<boolean> => {
+    const next: ManualShoppingItem = {
+      ...input,
+      title: input.title.trim(),
+      quantity: input.quantity.trim(),
+      note: input.note.trim(),
+    };
+    if (!next.title) {
+      reportError('Напишіть, що потрібно купити.');
+      return false;
+    }
+    const previous = manualPurchases;
+    setManualPurchases((current) => [next, ...current.filter((item) => item.id !== next.id)]);
+    const { error } = await supabase!.from('home_meds_items').upsert({
+      id: next.id,
+      user_id: dataOwnerId,
+      kind: 'shopping',
+      payload: next,
+    });
+    if (error) {
+      setManualPurchases(previous);
+      reportError('Покупку не збережено: ' + errorText(error, 'спробуйте ще раз.'));
+      return false;
+    }
+    return true;
+  };
+
+  const addManualPurchase = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (await saveManualPurchase(manualPurchaseDraft)) setManualPurchaseDraft(newManualShoppingItem());
+  };
+
+  const deleteManualPurchase = async (item: ManualShoppingItem) => {
+    const previous = manualPurchases;
+    setManualPurchases((current) => current.filter((currentItem) => currentItem.id !== item.id));
+    const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId);
+    if (error) {
+      setManualPurchases(previous);
+      reportError('Не вдалося видалити покупку: ' + errorText(error, 'спробуйте ще раз.'));
+    }
+  };
+
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const next = {
@@ -950,6 +1024,9 @@ function Workspace({ user }: { user: User }) {
   const sharedCabinet = householdAccess !== null;
   const pendingPurchases = medicines.filter((medicine) => isLowStock(medicine) && medicine.shoppingStatus !== 'done');
   const completedPurchases = medicines.filter((medicine) => isLowStock(medicine) && medicine.shoppingStatus === 'done');
+  const pendingManualPurchases = manualPurchases.filter((item) => !item.done);
+  const completedManualPurchases = manualPurchases.filter((item) => item.done);
+  const purchaseCount = pendingPurchases.length + pendingManualPurchases.length;
   const expiryAttention = medicines.filter((medicine) => {
     const days = daysUntilExpiry(medicine.expiry);
     return days !== null && days <= 30;
@@ -1037,11 +1114,11 @@ function Workspace({ user }: { user: User }) {
 
         <div className="stats-grid">
           <article className="stat-card"><span className="stat-icon teal"><Pill /></span><div><strong>{medicines.length}</strong><p>позицій в аптечці</p></div></article>
-          <article className="stat-card"><span className="stat-icon orange"><ShoppingBasket /></span><div><strong>{pendingPurchases.length}</strong><p>треба купити</p></div></article>
+          <article className="stat-card"><span className="stat-icon orange"><ShoppingBasket /></span><div><strong>{purchaseCount}</strong><p>треба купити</p></div></article>
           <article className="stat-card"><span className="stat-icon blue"><CalendarClock /></span><div><strong>{expiryAttention}</strong><p>термінів у найближчі 30 днів</p></div></article>
         </div>
 
-        {pendingPurchases.length > 0 && <section className="status-banner">
+        {purchaseCount > 0 && <section className="status-banner">
           <span className="banner-icon"><AlertTriangle size={19} /></span>
           <div><strong>Автоматичний список покупок</strong><p>Ліки з низьким запасом з’явилися тут самі.</p></div>
         </section>}
@@ -1100,8 +1177,14 @@ function Workspace({ user }: { user: User }) {
 
         <section className="panel shopping-panel auto-shopping-panel">
           <div className="shopping-heading">
-            <div><span className="shopping-number"><ShoppingBasket size={20} /></span><div><h2>Покупки</h2><p>Створюються автоматично, коли залишок досягає вашого мінімуму.</p></div></div>
+            <div><span className="shopping-number"><ShoppingBasket size={20} /></span><div><h2>Покупки</h2><p>Автоматичні позиції з’являються від малого запасу, а будь-що інше можна додати вручну.</p></div></div>
           </div>
+          {canEdit && <form className="manual-shopping-form" onSubmit={(event) => void addManualPurchase(event)}>
+            <input aria-label="Що купити додому" onChange={(event) => setManualPurchaseDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Що треба купити додому?" required value={manualPurchaseDraft.title} />
+            <input aria-label="Кількість" onChange={(event) => setManualPurchaseDraft((current) => ({ ...current, quantity: event.target.value }))} placeholder="К-сть" value={manualPurchaseDraft.quantity} />
+            <input aria-label="Нотатка до покупки" onChange={(event) => setManualPurchaseDraft((current) => ({ ...current, note: event.target.value }))} placeholder="Нотатка" value={manualPurchaseDraft.note} />
+            <button className="outline-button" type="submit"><Plus size={16} />Додати</button>
+          </form>}
           {pendingPurchases.length ? <div className="shopping-list">
             {pendingPurchases.map((medicine) => <div className="shopping-item" key={medicine.id}>
               <span className="pill-symbol"><Pill size={17} /></span>
@@ -1109,8 +1192,17 @@ function Workspace({ user }: { user: User }) {
               {canEdit && <><button className="buy-tag" onClick={() => void saveMedicine({ ...medicine, shoppingStatus: 'done', purchaseDoneAt: new Date().toISOString() })} type="button">Позначити купленим</button>
               <button aria-label={'Редагувати ' + medicine.name} className="dots" onClick={() => openMedicineEditor(medicine)} type="button"><Edit3 size={16} /></button></>}
             </div>)}
-          </div> : <p className="subtext">Наразі все є в достатній кількості.</p>}
+          </div> : !pendingManualPurchases.length && <p className="subtext">Наразі все є в достатній кількості.</p>}
+          {pendingManualPurchases.length > 0 && <div className="shopping-list manual-shopping-list">
+            {pendingManualPurchases.map((item) => <div className="shopping-item" key={item.id}>
+              <span className="pill-symbol"><ShoppingBasket size={17} /></span>
+              <div><strong>{item.title}</strong><small>{[item.quantity, item.note].filter(Boolean).join(' · ') || 'Додано вручну'}</small></div>
+              {canEdit && <><button className="buy-tag" onClick={() => void saveManualPurchase({ ...item, done: true })} type="button">Куплено</button>
+              <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
+            </div>)}
+          </div>}
           {completedPurchases.length > 0 && <p className="completed-shopping-note"><Check size={15} /> Куплено: {completedPurchases.map((medicine) => medicine.name).join(', ')}. Оновіть залишок, коли покладете покупки в аптечку.</p>}
+          {completedManualPurchases.length > 0 && <p className="completed-shopping-note"><Check size={15} /> Куплено вручну: {completedManualPurchases.map((item) => item.title).join(', ')}.</p>}
         </section>
       </section>}
 

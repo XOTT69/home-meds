@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 type Activity = {
   id: string;
   actor_user_id: string | null;
-  entity_type: 'medicine' | 'trip' | 'trip_item' | 'family_member';
+  entity_type: 'medicine' | 'trip' | 'trip_item' | 'family_member' | 'shopping';
   action: 'created' | 'updated' | 'deleted';
   label: string;
   created_at: string;
@@ -16,6 +16,7 @@ const entityLabel: Record<Activity['entity_type'], string> = {
   trip: 'подорож',
   trip_item: 'пункт чекліста',
   family_member: 'профіль родини',
+  shopping: 'покупку',
 };
 
 const actionLabel: Record<Activity['action'], string> = {

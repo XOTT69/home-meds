@@ -5,7 +5,7 @@
 ## Можливості
 
 - аптечка з категоріями, локаціями, залишком, мінімальним запасом, строком, активною речовиною, дозуванням, застереженнями та приватним фото упаковки;
-- автоматичний список покупок, коли залишок доходить до заданого мінімуму;
+- автоматичний список покупок, коли залишок доходить до заданого мінімуму, і ручне додавання будь-чого, чого немає вдома;
 - сканування штрихкоду з фото в браузерах, де підтримується BarcodeDetector;
 - пошук, швидкі фільтри, друкований експорт аптечки у PDF та безпечні нотатки про застосування;
 - сімейні профілі з редагуванням, алергіями та примітками; у картці ліків можна позначити, кому вони підходять;
@@ -37,7 +37,7 @@ npm run build
 ## Підключення безкоштовного Supabase
 
 1. Створіть безкоштовний проєкт у [Supabase](https://supabase.com/).
-2. У **SQL Editor** виконайте по черзі [schema.sql](./supabase/schema.sql), [міграцію профілю й подорожей](./supabase/migrations/20260914_personalize_home_meds.sql), [міграцію родини й приватних фото](./supabase/migrations/20260914_family_inventory.sql), [міграцію спільної аптечки](./supabase/migrations/20260914_shared_households.sql) та [професійну міграцію ролей і журналу](./supabase/migrations/20260914_cabinet_pro.sql).
+2. У **SQL Editor** виконайте по черзі [schema.sql](./supabase/schema.sql), [міграцію профілю й подорожей](./supabase/migrations/20260914_personalize_home_meds.sql), [міграцію родини й приватних фото](./supabase/migrations/20260914_family_inventory.sql), [міграцію спільної аптечки](./supabase/migrations/20260914_shared_households.sql), [професійну міграцію ролей і журналу](./supabase/migrations/20260914_cabinet_pro.sql) та [міграцію ручних покупок](./supabase/migrations/20260914_manual_shopping.sql).
 3. У **Authentication → URL Configuration** додайте URL сайту та `https://xott69.github.io/home-meds/` до Redirect URLs.
 4. Створіть `.env.local` за прикладом `.env.example` і вставте **Project URL** та **Publishable key** з Supabase. Не використовуйте `service_role` key.
 

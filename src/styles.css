@@ -2,9 +2,9 @@
 
 :root { font-family: 'DM Sans', sans-serif; color: #243431; background: #f6f7f4; font-synthesis: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 * { box-sizing: border-box; }
-html { min-width: 320px; min-height: 100%; overflow-x: hidden; background: #f6f7f4; touch-action: pan-x pan-y; }
-body { margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-x pan-y; }
-#root { min-height: 100vh; min-height: 100dvh; isolation: isolate; }
+html { min-width: 320px; min-height: 100%; max-width: 100%; overflow-x: clip; background: #f6f7f4; touch-action: pan-x pan-y; }
+body { width: 100%; max-width: 100%; margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; overflow-x: clip; overscroll-behavior-x: none; touch-action: pan-x pan-y; }
+#root { width: 100%; max-width: 100%; min-height: 100vh; min-height: 100dvh; isolation: isolate; }
 img { max-width: 100%; height: auto; }
 svg { flex: 0 0 auto; }
 button, input, select, textarea { font: inherit; }
@@ -130,6 +130,11 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .activity-dot.updated { background: #6c9ab6; }.activity-dot.deleted { background: #c77662; }
 .activity-row strong { display: block; color: #3f5d51; font-size: 11px; line-height: 1.35; }.activity-row p { margin: 2px 0 0; color: #798a82; font-size: 10px; }.activity-row time { color: #8a9791; font-size: 10px; white-space: nowrap; }
 
+.manual-shopping-form { display: grid; grid-template-columns: minmax(150px, 1.5fr) minmax(76px, .45fr) minmax(110px, .8fr) auto; gap: 8px; margin: 0 0 12px; padding: 11px; border: 1px solid #dbe9e1; border-radius: 11px; background: #f8fcf9; }
+.manual-shopping-form input { min-width: 0; height: 40px; border: 1px solid #d7e4dc; border-radius: 8px; background: #fff; color: #31463e; padding: 0 10px; outline-color: #52a78f; font-size: 12px; }
+.manual-shopping-form .outline-button { min-height: 40px; }
+.manual-shopping-list { margin-top: 2px; }
+
 @media (max-width: 900px) {
   .profile-stack { grid-template-columns: 1fr; }
   .profile-stack > :first-child, .profile-form, .sharing-setup-note { grid-column: auto; }
@@ -146,8 +151,22 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .cabinet-tools { grid-template-columns: 1fr; gap: 8px; }
   .cabinet-filters { width: 100%; }
   .page-actions { justify-content: flex-start; }
+  .manual-shopping-form { grid-template-columns: minmax(0, 1fr) minmax(70px, .36fr); }
+  .manual-shopping-form input:nth-of-type(3) { grid-column: span 2; }
+  .manual-shopping-form .outline-button { grid-column: span 2; width: 100%; }
   .topbar { gap: 8px; }
   .topbar > strong { flex: 1 1 0; font-size: 12px; }
+}
+
+@media (max-width: 390px) {
+  .page { padding-left: 13px; padding-right: 13px; }
+  .page-head { align-items: stretch; flex-wrap: wrap; }
+  .page-actions { width: 100%; }
+  .page-actions > button { flex: 1 1 0; min-width: 0; padding-left: 10px; padding-right: 10px; }
+  .topbar { padding-left: 12px; padding-right: 12px; }
+  .shopping-item { flex-wrap: wrap; }
+  .shopping-item > div { flex: 1 1 150px; }
+  .shopping-item .buy-tag { margin-left: 48px; }
 }
 
 @media (max-width: 430px) {
@@ -164,7 +183,9 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .medicine-card-top,
 .medicine-meta,
 .packing-item > div,
-.shopping-item > div { min-width: 0; }
+.shopping-item > div,
+.shopping-heading > div,
+.page-actions { min-width: 0; }
 
 .app-shell { min-height: 100dvh; }
 .app-shell, .sidebar, .content, .modal-backdrop { max-width: 100vw; }
@@ -185,7 +206,9 @@ input, select, textarea, button { max-width: 100%; }
 .medicine-card h3,
 .medicine-note,
 .packing-item strong,
-.shopping-item strong { overflow-wrap: anywhere; }
+.shopping-item strong,
+.shopping-item small,
+.manual-shopping-form input { overflow-wrap: anywhere; }
 
 .search { min-width: 0; }
 .search:focus-within { border-color: #58a98f; box-shadow: 0 0 0 3px rgba(52, 153, 123, .14); }
