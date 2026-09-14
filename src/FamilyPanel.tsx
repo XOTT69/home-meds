@@ -1,26 +1,122 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Plus, Trash2, UsersRound } from 'lucide-react';
+import { AlertCircle, Edit3, LoaderCircle, Plus, Trash2, UsersRound } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Member = { id: string; user_id: string; name: string; relation: string; allergies: string; notes: string };
+type MemberDraft = Omit<Member, 'id' | 'user_id'>;
+
+const emptyDraft = (): MemberDraft => ({ name: '', relation: '', allergies: '', notes: '' });
 
 export function FamilyPanel({ userId }: { userId: string }) {
   const [members, setMembers] = useState<Member[]>([]);
-  const [draft, setDraft] = useState({ name: '', relation: '', allergies: '', notes: '' });
+  const [draft, setDraft] = useState<MemberDraft>(emptyDraft);
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => { void supabase!.from('home_meds_members').select('*').eq('user_id', userId).then(({ data }) => setMembers((data ?? []) as Member[])); }, [userId]);
-  const save = async (event: FormEvent) => {
+  useEffect(() => {
+    if (!supabase) return;
+    void supabase
+      .from('home_meds_members')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at')
+      .then(({ data, error: loadError }) => {
+        if (loadError) {
+          setError('Не вдалося завантажити профілі родини. Спробуйте ще раз.');
+          return;
+        }
+        setMembers((data ?? []) as Member[]);
+      });
+  }, [userId]);
+
+  const close = (force = false) => {
+    if (isSaving && !force) return;
+    setOpen(false);
+    setEditingId(null);
+    setDraft(emptyDraft());
+    setError('');
+  };
+
+  const add = () => {
+    setEditingId(null);
+    setDraft(emptyDraft());
+    setError('');
+    setOpen(true);
+  };
+
+  const edit = (member: Member) => {
+    setEditingId(member.id);
+    setDraft({ name: member.name, relation: member.relation, allergies: member.allergies, notes: member.notes });
+    setError('');
+    setOpen(true);
+  };
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const member: Member = { id: crypto.randomUUID(), user_id: userId, ...draft };
-    const { error } = await supabase!.from('home_meds_members').insert(member);
-    if (!error) { setMembers((items) => [...items, member]); setDraft({ name: '', relation: '', allergies: '', notes: '' }); setOpen(false); }
-  };
-  const remove = async (member: Member) => {
-    if (!confirm(`Видалити профіль «${member.name}»?`)) return;
-    setMembers((items) => items.filter((item) => item.id !== member.id));
-    await supabase!.from('home_meds_members').delete().eq('id', member.id);
+    if (!supabase) return;
+
+    const name = draft.name.trim();
+    if (!name) {
+      setError('Вкажіть ім’я або назву профілю.');
+      return;
+    }
+
+    const values: MemberDraft = {
+      name,
+      relation: draft.relation.trim(),
+      allergies: draft.allergies.trim(),
+      notes: draft.notes.trim(),
+    };
+    setIsSaving(true);
+    setError('');
+
+    if (editingId) {
+      const { data, error: updateError } = await supabase
+        .from('home_meds_members')
+        .update(values)
+        .eq('id', editingId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+      setIsSaving(false);
+
+      if (updateError || !data) {
+        setError('Не вдалося оновити профіль. Перевірте з’єднання й спробуйте ще раз.');
+        return;
+      }
+      const updated = data as Member;
+      setMembers((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      close(true);
+      return;
+    }
+
+    const member: Member = { id: crypto.randomUUID(), user_id: userId, ...values };
+    const { data, error: insertError } = await supabase.from('home_meds_members').insert(member).select().single();
+    setIsSaving(false);
+
+    if (insertError || !data) {
+      setError('Не вдалося зберегти профіль. Перевірте з’єднання й спробуйте ще раз.');
+      return;
+    }
+    setMembers((items) => [...items, data as Member]);
+    close(true);
   };
 
-  return <section className="panel family-panel"><div className="panel-title"><div><p className="eyebrow">ВАША РОДИНА</p><h2>Для кого аптечка</h2></div><button className="outline-button" onClick={() => setOpen(true)}><Plus size={16} /> Додати</button></div>{members.length ? <div className="family-grid">{members.map((member) => <article className="family-card" key={member.id}><span><UsersRound size={18} /></span><div><strong>{member.name}</strong><small>{member.relation || 'Член родини'}</small>{member.allergies && <p>Алергії: {member.allergies}</p>}</div><button className="dots danger-action" onClick={() => void remove(member)}><Trash2 size={16} /></button></article>)}</div> : <p className="subtext">Додайте членів родини, щоб зберігати важливі застереження.</p>}{open && <div className="modal-backdrop"><form className="modal" onSubmit={save}><div className="modal-head"><h2>Новий профіль</h2></div><label>Ім’я<input required autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label><label>Хто це<input value={draft.relation} onChange={(e) => setDraft({ ...draft, relation: e.target.value })} placeholder="Наприклад, дитина" /></label><label>Алергії<input value={draft.allergies} onChange={(e) => setDraft({ ...draft, allergies: e.target.value })} placeholder="Лише відомі застереження" /></label><label>Примітки<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label><button className="primary-button full">Зберегти</button><button type="button" className="auth-text-button" onClick={() => setOpen(false)}>Скасувати</button></form></div>}</section>;
+  const remove = async (member: Member) => {
+    if (!supabase || !confirm(`Видалити профіль «${member.name}»?`)) return;
+    setDeletingId(member.id);
+    setError('');
+    const { error: deleteError } = await supabase.from('home_meds_members').delete().eq('id', member.id).eq('user_id', userId);
+    setDeletingId(null);
+    if (deleteError) {
+      setError('Не вдалося видалити профіль. Спробуйте ще раз.');
+      return;
+    }
+    setMembers((items) => items.filter((item) => item.id !== member.id));
+  };
+
+  return <section className="panel family-panel"><div className="panel-title"><div><p className="eyebrow">ВАША РОДИНА</p><h2>Для кого аптечка</h2></div><button type="button" className="outline-button" onClick={add}><Plus size={16} /> Додати</button></div>{error && !open && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}{members.length ? <div className="family-grid">{members.map((member) => <article className="family-card" key={member.id}><span><UsersRound size={18} /></span><div><strong>{member.name}</strong><small>{member.relation || 'Член родини'}</small>{member.allergies && <p>Алергії: {member.allergies}</p>}{member.notes && <p>Примітки: {member.notes}</p>}</div><button type="button" className="dots" aria-label={`Редагувати ${member.name}`} onClick={() => edit(member)}><Edit3 size={16} /></button><button type="button" className="dots danger-action" aria-label={`Видалити ${member.name}`} disabled={deletingId === member.id} onClick={() => void remove(member)}>{deletingId === member.id ? <LoaderCircle size={16} className="spin" /> : <Trash2 size={16} />}</button></article>)}</div> : <p className="subtext">Додайте членів родини, щоб зберігати важливі застереження.</p>}{open && <div className="modal-backdrop" onMouseDown={() => close()}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={save}><div className="modal-head"><h2>{editingId ? 'Редагувати профіль' : 'Новий профіль'}</h2></div><label>Ім’я<input required autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>Хто це<input value={draft.relation} onChange={(event) => setDraft({ ...draft, relation: event.target.value })} placeholder="Наприклад, дитина" /></label><label>Алергії<input value={draft.allergies} onChange={(event) => setDraft({ ...draft, allergies: event.target.value })} placeholder="Лише відомі застереження" /></label><label>Примітки<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>{error && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}<button className="primary-button full" disabled={isSaving}>{isSaving ? 'Зберігаємо…' : 'Зберегти'}</button><button type="button" className="auth-text-button" disabled={isSaving} onClick={() => close()}>Скасувати</button></form></div>}</section>;
 }
