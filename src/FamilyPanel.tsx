@@ -7,7 +7,7 @@ type MemberDraft = Omit<Member, 'id' | 'user_id'>;
 
 const emptyDraft = (): MemberDraft => ({ name: '', relation: '', allergies: '', notes: '' });
 
-export function FamilyPanel({ userId }: { userId: string }) {
+export function FamilyPanel({ userId, onMembersChange }: { userId: string; onMembersChange?: (members: Member[]) => void }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [draft, setDraft] = useState<MemberDraft>(emptyDraft);
   const [open, setOpen] = useState(false);
@@ -28,7 +28,9 @@ export function FamilyPanel({ userId }: { userId: string }) {
           setError('Не вдалося завантажити профілі родини. Спробуйте ще раз.');
           return;
         }
-        setMembers((data ?? []) as Member[]);
+        const nextMembers = (data ?? []) as Member[];
+        setMembers(nextMembers);
+        onMembersChange?.(nextMembers);
       });
   }, [userId]);
 
@@ -88,7 +90,11 @@ export function FamilyPanel({ userId }: { userId: string }) {
         return;
       }
       const updated = data as Member;
-      setMembers((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setMembers((items) => {
+        const nextMembers = items.map((item) => (item.id === updated.id ? updated : item));
+        onMembersChange?.(nextMembers);
+        return nextMembers;
+      });
       close(true);
       return;
     }
@@ -101,7 +107,11 @@ export function FamilyPanel({ userId }: { userId: string }) {
       setError('Не вдалося зберегти профіль. Перевірте з’єднання й спробуйте ще раз.');
       return;
     }
-    setMembers((items) => [...items, data as Member]);
+    setMembers((items) => {
+      const nextMembers = [...items, data as Member];
+      onMembersChange?.(nextMembers);
+      return nextMembers;
+    });
     close(true);
   };
 
@@ -115,7 +125,11 @@ export function FamilyPanel({ userId }: { userId: string }) {
       setError('Не вдалося видалити профіль. Спробуйте ще раз.');
       return;
     }
-    setMembers((items) => items.filter((item) => item.id !== member.id));
+    setMembers((items) => {
+      const nextMembers = items.filter((item) => item.id !== member.id);
+      onMembersChange?.(nextMembers);
+      return nextMembers;
+    });
   };
 
   return <section className="panel family-panel"><div className="panel-title"><div><p className="eyebrow">ВАША РОДИНА</p><h2>Для кого аптечка</h2></div><button type="button" className="outline-button" onClick={add}><Plus size={16} /> Додати</button></div>{error && !open && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}{members.length ? <div className="family-grid">{members.map((member) => <article className="family-card" key={member.id}><span><UsersRound size={18} /></span><div><strong>{member.name}</strong><small>{member.relation || 'Член родини'}</small>{member.allergies && <p>Алергії: {member.allergies}</p>}{member.notes && <p>Примітки: {member.notes}</p>}</div><button type="button" className="dots" aria-label={`Редагувати ${member.name}`} onClick={() => edit(member)}><Edit3 size={16} /></button><button type="button" className="dots danger-action" aria-label={`Видалити ${member.name}`} disabled={deletingId === member.id} onClick={() => void remove(member)}>{deletingId === member.id ? <LoaderCircle size={16} className="spin" /> : <Trash2 size={16} />}</button></article>)}</div> : <p className="subtext">Додайте членів родини, щоб зберігати важливі застереження.</p>}{open && <div className="modal-backdrop" onMouseDown={() => close()}><form className="modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={save}><div className="modal-head"><h2>{editingId ? 'Редагувати профіль' : 'Новий профіль'}</h2></div><label>Ім’я<input required autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>Хто це<input value={draft.relation} onChange={(event) => setDraft({ ...draft, relation: event.target.value })} placeholder="Наприклад, дитина" /></label><label>Алергії<input value={draft.allergies} onChange={(event) => setDraft({ ...draft, allergies: event.target.value })} placeholder="Лише відомі застереження" /></label><label>Примітки<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>{error && <p className="form-hint" role="alert"><AlertCircle size={15} /> {error}</p>}<button className="primary-button full" disabled={isSaving}>{isSaving ? 'Зберігаємо…' : 'Зберегти'}</button><button type="button" className="auth-text-button" disabled={isSaving} onClick={() => close()}>Скасувати</button></form></div>}</section>;
