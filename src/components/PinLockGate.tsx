@@ -40,10 +40,11 @@ export type PinLockGateProps = {
   /**
    * Optional identity-verification flow for "forgot PIN". It must return true
    * only after the account owner has proved their identity (for example after
-   * a fresh password sign-in). Returning true clears the local PIN and opens
-   * setup; this component never weakens the lock by resetting it on its own.
+   * a fresh password sign-in). Only an explicit `true` clears the local PIN
+   * and opens setup. A callback may instead sign the user out and return void;
+   * this component never weakens the lock by resetting it on its own.
    */
-  onForgotPin?: () => Promise<boolean> | boolean;
+  onForgotPin?: () => Promise<boolean | void> | boolean | void;
 };
 
 function PinField({ value, onChange, label, autoFocus = false }: { value: string; onChange: (value: string) => void; label: string; autoFocus?: boolean }) {
@@ -249,7 +250,7 @@ export function PinLockGate({
     setError('');
     try {
       const verified = await onForgotPin();
-      if (!verified) {
+      if (verified !== true) {
         setError('Підтвердження особи не завершено. PIN залишився без змін.');
         return;
       }

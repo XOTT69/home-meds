@@ -1,0 +1,116 @@
+.settings {
+  border: 1px solid #dfe9e2;
+  border-radius: 14px;
+  background: #fbfefb;
+  color: #29443c;
+  padding: 18px;
+}
+
+.header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.icon {
+  flex: 0 0 auto;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: #e7f4ed;
+  color: #287b67;
+}
+
+.iconMuted {
+  background: #f7eee5;
+  color: #9a6c36;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: #29443c;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.description,
+.status,
+.offline {
+  margin: 4px 0 0;
+  color: #657a71;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.offline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #9a6b35;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.button,
+.secondaryButton {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.button {
+  border: 1px solid #207662;
+  background: #207662;
+  color: #fff;
+}
+
+.secondaryButton {
+  border: 1px solid #bcd8cc;
+  background: #fff;
+  color: #286c5c;
+}
+
+.button:disabled,
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.result {
+  margin: 12px 0 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #eff8f2;
+  color: #386a58;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.warning {
+  background: #fff6eb;
+  color: #91683a;
+}
+
+.hint {
+  margin: 13px 0 0;
+  color: #819189;
+  font-size: 11px;
+  line-height: 1.45;
+}
