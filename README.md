@@ -39,8 +39,9 @@ npm run build
 Workflow вже готовий у `.github/workflows/deploy-pages.yml`.
 
 1. У репозиторії відкрийте **Settings → Pages** і виберіть джерело **GitHub Actions**.
-2. У **Settings → Secrets and variables → Actions** додайте `VITE_SUPABASE_URL` та `VITE_SUPABASE_PUBLISHABLE_KEY`.
-3. Після push у `main` сайт буде опублікований на `https://xott69.github.io/home-meds/`.
+2. Після push у `main` сайт буде опублікований на `https://xott69.github.io/home-meds/`.
+
+`VITE_SUPABASE_URL` і publishable key вже записані у `.env.production`: це публічні параметри браузерного застосунку. Не додавайте туди `service_role` або `sb_secret` key.
 
 Безкоштовний SMTP Supabase призначений для розробки та має малий ліміт на листи. Для публічного запуску потрібно підключити власний SMTP-провайдер; для приватного тестування стандартного достатньо.
 
