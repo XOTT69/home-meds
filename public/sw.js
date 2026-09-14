@@ -1,7 +1,7 @@
 // The registration scope is `/home-meds/` on GitHub Pages and `/` in a local
 // preview. Resolving cache keys against it keeps the worker portable.
 const CACHE_PREFIX = 'home-meds-cache-';
-const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const CACHE_NAME = `${CACHE_PREFIX}v3`;
 const SCOPE_URL = self.registration.scope;
 const APP_SHELL_URL = new URL('./', SCOPE_URL).href;
 const INDEX_URL = new URL('index.html', SCOPE_URL).href;
