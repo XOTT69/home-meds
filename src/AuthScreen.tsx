@@ -73,7 +73,7 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
       {passwordMode && <label>Повторіть пароль<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Повторіть новий пароль" /></label>}
       {error && <p className="auth-message error">{error}</p>}{message && <p className="auth-message success"><CheckCircle2 size={16} />{message}</p>}
       <button className="primary-button full auth-submit" disabled={busy}>{busy ? 'Зачекайте…' : passwordMode ? 'Зберегти новий пароль' : recoveryMode ? 'Надіслати посилання' : isSignUp ? 'Створити акаунт' : 'Увійти'}</button>
-      {mode === 'sign-in' && <button type="button" className="auth-text-button" onClick={() => changeMode('recover')}>Забули пароль або PIN?</button>}
+      {mode === 'sign-in' && <button type="button" className="auth-text-button" onClick={() => changeMode('recover')}>Забули пароль?</button>}
       {!recoveryMode && !passwordMode && <p className="auth-switch">{isSignUp ? 'Вже маєте акаунт?' : 'Ще не маєте акаунта?'} <button type="button" onClick={() => changeMode(isSignUp ? 'sign-in' : 'sign-up')}>{isSignUp ? 'Увійти' : 'Зареєструватися'}</button></p>}
       <p className="auth-privacy">Продовжуючи, ви погоджуєтесь з приватним зберіганням своїх даних. Не зберігайте тут призначення замість консультації лікаря.</p>
     </form></section>
