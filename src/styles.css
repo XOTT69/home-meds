@@ -64,6 +64,9 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .medicine-media-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
 .photo-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .photo-upload small { color: #a35b48; font-size: 11px; }
+.recognized-text { border: 1px solid #dbe9e1; border-radius: 9px; padding: 9px 11px; color: #61776d; background: #f8fcf9; font-size: 11px; line-height: 1.45; }
+.recognized-text summary { cursor: pointer; color: #357560; font-weight: 700; }
+.recognized-text p { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .member-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; }
 .member-checkbox { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d9e5de; border-radius: 9px; padding: 8px 10px; color: #456159; font-size: 12px; font-weight: 600; }
 .member-checkbox input { accent-color: #1f806a; height: 15px; width: 15px; }

@@ -27,6 +27,7 @@ import { HouseholdSharingPanel, type HouseholdAccessState } from './components/H
 import { ActivityPanel } from './components/ActivityPanel';
 import { NotificationSettings } from './components/NotificationSettings';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
+import { lookupMedicineByBarcode, lookupMedicineByText, recognizePackageText, type MedicineLookup } from './lib/medicineLookup';
 
 type MedicineShoppingStatus = 'pending' | 'done';
 
@@ -383,7 +384,10 @@ function MedicineEditor({
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [scanMessage, setScanMessage] = useState('');
+  const [scanProgress, setScanProgress] = useState<number | null>(null);
+  const [recognizedText, setRecognizedText] = useState('');
   const scanInput = useRef<HTMLInputElement>(null);
+  const packageScanInput = useRef<HTMLInputElement>(null);
 
   const setValue = <Key extends keyof Med>(key: Key, nextValue: Med[Key]) => {
     setDraft((current) => ({ ...current, [key]: nextValue }));
@@ -396,6 +400,25 @@ function MedicineEditor({
         ? current.memberIds.filter((id) => id !== memberId)
         : [...current.memberIds, memberId],
     }));
+  };
+
+  const applyLookup = (lookup: MedicineLookup) => {
+    setDraft((current) => ({
+      ...current,
+      name: lookup.name || current.name,
+      category: lookup.category || current.category,
+      activeIngredient: lookup.activeIngredient || current.activeIngredient,
+      dosage: lookup.dosage || current.dosage,
+      instructions: lookup.instructions || current.instructions,
+      warnings: lookup.warnings || current.warnings,
+    }));
+    if (lookup.source === 'barcode-fda') {
+      setScanMessage(lookup.instructions || lookup.warnings
+        ? 'Ліки знайдено за штрихкодом. Дані з довідника підставлено — перевірте їх за упаковкою.'
+        : 'Ліки знайдено за штрихкодом. Перевірте назву й дозування за упаковкою.');
+    } else {
+      setScanMessage('З фото знайдено ймовірну назву. Будь ласка, перевірте збіг перед збереженням.');
+    }
   };
 
   const scanBarcode = async (file?: File) => {
@@ -416,7 +439,10 @@ function MedicineEditor({
         const barcode = result[0]?.rawValue;
         if (barcode) {
           setValue('barcode', barcode);
-          setScanMessage('Штрихкод розпізнано: ' + barcode + '.');
+          setScanMessage('Штрихкод розпізнано. Шукаємо дані про ліки…');
+          const lookup = await lookupMedicineByBarcode(barcode);
+          if (lookup) applyLookup(lookup);
+          else setScanMessage('Штрихкод розпізнано: ' + barcode + '. У безкоштовному довіднику даних не знайдено — можна спробувати фото упаковки або заповнити картку вручну.');
         } else {
           setScanMessage('Штрихкод на фото не знайдено. Спробуйте зробити чіткіше фото.');
         }
@@ -425,6 +451,29 @@ function MedicineEditor({
       }
     } catch {
       setScanMessage('Фото не вдалося прочитати. Спробуйте інше зображення.');
+    }
+  };
+
+  const scanPackage = async (file?: File) => {
+    if (!file) return;
+    setScanMessage('Читаємо текст із фото упаковки…');
+    setScanProgress(0);
+    setRecognizedText('');
+    try {
+      const text = await recognizePackageText(file, setScanProgress);
+      setRecognizedText(text);
+      if (!text) {
+        setScanMessage('Текст на фото не розпізнано. Зробіть фото при хорошому світлі, без відблисків.');
+        return;
+      }
+      setScanMessage('Шукаємо назву серед розпізнаного тексту…');
+      const lookup = await lookupMedicineByText(text);
+      if (lookup) applyLookup(lookup);
+      else setScanMessage('Текст з упаковки прочитано, але точного кандидата не знайдено. Перевірте назву вручну.');
+    } catch {
+      setScanMessage('Не вдалося прочитати фото. Спробуйте чіткіше фото лицьової сторони упаковки.');
+    } finally {
+      setScanProgress(null);
     }
   };
 
@@ -496,11 +545,21 @@ function MedicineEditor({
           type="file"
         />
         <button className="outline-button" onClick={() => scanInput.current?.click()} type="button"><Camera size={16} /> Сканувати штрихкод</button>
+        <input
+          accept="image/*"
+          capture="environment"
+          className="visually-hidden"
+          onChange={(event) => void scanPackage(event.target.files?.[0])}
+          ref={packageScanInput}
+          type="file"
+        />
+        <button className="outline-button" disabled={scanProgress !== null} onClick={() => packageScanInput.current?.click()} type="button"><ImageIcon size={16} /> {scanProgress === null ? 'Розпізнати упаковку' : `Розпізнаємо ${scanProgress}%`}</button>
       </div>
       <Field label="Штрихкод" hint="Необов’язково — заповнюється після сканування або вручну.">
         <input value={draft.barcode ?? ''} onChange={(event) => setValue('barcode', event.target.value || undefined)} />
       </Field>
       {scanMessage && <p className="form-hint" role="status">{scanMessage}</p>}
+      {recognizedText && <details className="recognized-text"><summary>Розпізнаний текст з упаковки</summary><p>{recognizedText}</p></details>}
       <button className="primary-button full" disabled={saving} type="submit">{saving ? 'Зберігаємо…' : 'Зберегти ліки'}</button>
     </form>
   </Modal>;
@@ -604,6 +663,52 @@ function TripItemEditor({
       <label className="toggle-line"><input checked={draft.inCabinet} onChange={(event) => setValue('inCabinet', event.target.checked)} type="checkbox" /> Є вдома</label>
       <label className="toggle-line"><input checked={draft.needBuy} onChange={(event) => setValue('needBuy', event.target.checked)} type="checkbox" /> Потрібно купити</label>
       <button className="primary-button full" disabled={saving} type="submit">{saving ? 'Зберігаємо…' : 'Зберегти пункт'}</button>
+    </form>
+  </Modal>;
+}
+
+function ManualShoppingEditor({
+  value,
+  onSave,
+  onClose,
+}: {
+  value: ManualShoppingItem;
+  onSave: (item: ManualShoppingItem) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      if (await onSave(draft)) onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <Modal onClose={onClose} title="Редагувати покупку">
+    <form className="form-grid" onSubmit={(event) => void submit(event)}>
+      <Field label="Що купити">
+        <input autoFocus required value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} />
+      </Field>
+      <div className="form-two-columns">
+        <Field label="Кількість">
+          <input value={draft.quantity} onChange={(event) => setDraft((current) => ({ ...current, quantity: event.target.value }))} placeholder="Наприклад, 2 упаковки" />
+        </Field>
+        <Field label="Статус">
+          <select value={draft.done ? 'done' : 'pending'} onChange={(event) => setDraft((current) => ({ ...current, done: event.target.value === 'done' }))}>
+            <option value="pending">Потрібно купити</option>
+            <option value="done">Куплено</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Нотатка">
+        <textarea rows={3} value={draft.note} onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} placeholder="Магазин, бренд, важливі деталі" />
+      </Field>
+      <button className="primary-button full" disabled={saving} type="submit">{saving ? 'Зберігаємо…' : 'Зберегти покупку'}</button>
     </form>
   </Modal>;
 }
@@ -1070,6 +1175,7 @@ function Workspace({ user }: { user: User }) {
   );
   const openTripEditor = (trip: Trip) => setModal(<TripEditor onClose={() => setModal(null)} onSave={saveTrip} value={trip} />);
   const openTripItemEditor = (item: TripItem) => setModal(<TripItemEditor onClose={() => setModal(null)} onSave={saveTripItem} value={item} />);
+  const openManualShoppingEditor = (item: ManualShoppingItem) => setModal(<ManualShoppingEditor onClose={() => setModal(null)} onSave={saveManualPurchase} value={item} />);
 
   if (loading) {
     return <main className="loading-screen"><span className="auth-brand-icon">+</span><span>Завантажуємо вашу аптечку…</span></main>;
@@ -1198,11 +1304,20 @@ function Workspace({ user }: { user: User }) {
               <span className="pill-symbol"><ShoppingBasket size={17} /></span>
               <div><strong>{item.title}</strong><small>{[item.quantity, item.note].filter(Boolean).join(' · ') || 'Додано вручну'}</small></div>
               {canEdit && <><button className="buy-tag" onClick={() => void saveManualPurchase({ ...item, done: true })} type="button">Куплено</button>
+              <button aria-label={'Редагувати ' + item.title} className="dots" onClick={() => openManualShoppingEditor(item)} type="button"><Edit3 size={16} /></button>
               <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
             </div>)}
           </div>}
           {completedPurchases.length > 0 && <p className="completed-shopping-note"><Check size={15} /> Куплено: {completedPurchases.map((medicine) => medicine.name).join(', ')}. Оновіть залишок, коли покладете покупки в аптечку.</p>}
-          {completedManualPurchases.length > 0 && <p className="completed-shopping-note"><Check size={15} /> Куплено вручну: {completedManualPurchases.map((item) => item.title).join(', ')}.</p>}
+          {completedManualPurchases.length > 0 && <div className="shopping-list completed-manual-shopping-list">
+            {completedManualPurchases.map((item) => <div className="shopping-item bought" key={item.id}>
+              <span className="pill-symbol"><Check size={17} /></span>
+              <div><strong>{item.title}</strong><small>{[item.quantity, item.note].filter(Boolean).join(' · ') || 'Куплено вручну'}</small></div>
+              {canEdit && <><button className="text-button" onClick={() => void saveManualPurchase({ ...item, done: false })} type="button">Повернути</button>
+              <button aria-label={'Редагувати ' + item.title} className="dots" onClick={() => openManualShoppingEditor(item)} type="button"><Edit3 size={16} /></button>
+              <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
+            </div>)}
+          </div>}
         </section>
       </section>}
 
