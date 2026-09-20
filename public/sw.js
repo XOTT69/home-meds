@@ -1,13 +1,11 @@
 // The registration scope is `/home-meds/` on GitHub Pages and `/` in a local
 // preview. Resolving cache keys against it keeps the worker portable.
 const CACHE_PREFIX = 'home-meds-cache-';
-const CACHE_NAME = `${CACHE_PREFIX}v3`;
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
 const SCOPE_URL = self.registration.scope;
 const APP_SHELL_URL = new URL('./', SCOPE_URL).href;
 const INDEX_URL = new URL('index.html', SCOPE_URL).href;
 const APP_SHELL_ASSETS = [
-  APP_SHELL_URL,
-  INDEX_URL,
   new URL('manifest.webmanifest', SCOPE_URL).href,
   new URL('favicon.svg', SCOPE_URL).href,
 ];
@@ -26,7 +24,21 @@ async function cacheResponse(request, response) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(APP_SHELL_ASSETS);
+    const shellResponse = await fetch(APP_SHELL_URL, { cache: 'reload' });
+    if (!shellResponse.ok) throw new Error('Application shell could not be cached.');
+    const html = await shellResponse.clone().text();
+    const assetUrls = Array.from(html.matchAll(/(?:src|href)=["']([^"']+)["']/g), (match) => {
+      try {
+        return new URL(match[1], APP_SHELL_URL).href;
+      } catch {
+        return '';
+      }
+    }).filter((url) => url && isSameOriginAppRequest(new URL(url)));
+    await Promise.all([
+      cache.put(APP_SHELL_URL, shellResponse.clone()),
+      cache.put(INDEX_URL, shellResponse.clone()),
+      cache.addAll(Array.from(new Set([...APP_SHELL_ASSETS, ...assetUrls]))),
+    ]);
     await self.skipWaiting();
   })());
 });

@@ -104,6 +104,11 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .medicine-warning svg { flex: 0 0 auto; margin-top: 1px; }
 .medicine-card-footer { display: flex; align-items: center; gap: 7px; margin-top: auto; padding-top: 12px; }
 .medicine-card-footer .buy-tag { margin-left: auto; border: 0; cursor: pointer; }
+.stock-stepper { display: inline-grid; grid-template-columns: 28px auto 28px; align-items: center; min-height: 30px; overflow: hidden; border: 1px solid #d9e6df; border-radius: 9px; background: #f8fbf9; }
+.stock-stepper button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; color: #23735f; background: transparent; }
+.stock-stepper button:hover { background: #e8f3ed; }
+.stock-stepper button:disabled { color: #a8b5af; background: transparent; }
+.stock-stepper span { padding: 0 7px; color: #65766f; border-inline: 1px solid #e2eae5; font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
 .danger-action { color: #b85e4c; }
 .danger-action:hover { color: #963e2f; }
 .auto-shopping-panel { margin-top: 25px; }
@@ -118,7 +123,10 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .sharing-setup-note h2 { margin: 0; color: #304b42; font-size: 18px; }
 .sharing-setup-note .subtext { margin: -3px 0 0; }
 .topbar > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar > .profile { margin-left: auto; }
 .shared-cabinet-indicator { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 8px; color: #246e5b; background: #e7f4ed; font-size: 10px; font-weight: 800; }
+.connection-indicator { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 25px; margin-left: auto; border-radius: 999px; padding: 0 9px; color: #9b5c35; background: #fff1e4; font-size: 10px; font-weight: 800; }
+.connection-indicator + .profile { margin-left: 0; }
 .family-panel { min-height: 185px; }
 .family-grid { display: grid; gap: 8px; }
 .family-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: start; gap: 9px; padding: 11px 0; border-top: 1px solid #edf0eb; }
@@ -129,8 +137,15 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .family-card p { color: #697e74; font-size: 10px; line-height: 1.35; margin: 4px 0 0; }
 .family-card .dots { padding: 4px 2px; }
 .page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.cabinet-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 22px 0 8px; }
+.cabinet-tools { display: grid; grid-template-columns: minmax(240px, 1fr) auto; align-items: center; gap: 12px; margin: 22px 0 8px; }
 .cabinet-filters { margin: 0; }
+.cabinet-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
+.cabinet-tool-actions .cabinet-filters { flex: 1 1 auto; min-width: 0; }
+.sort-control { position: relative; display: flex; align-items: center; }
+.sort-control > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sort-control select { height: 34px; min-width: 154px; border: 1px solid #e1e7e2; border-radius: 17px; padding: 0 29px 0 11px; color: #5a6e65; background: #fff; font-size: 11px; font-weight: 700; }
+.search-clear { width: 27px; height: 27px; display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #71817a; background: transparent; }
+.search-clear:hover { color: #2a6858; background: #edf5f0; }
 .location-summary { margin: 0 0 14px; color: #75867e; font-size: 11px; }
 .viewer-banner { border-color: #c9dce9; background: #f1f8fd; }
 .viewer-banner .banner-icon { color: #417590; background: #dcecf7; }
@@ -145,6 +160,14 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .manual-shopping-form input { min-width: 0; height: 40px; border: 1px solid #d7e4dc; border-radius: 8px; background: #fff; color: #31463e; padding: 0 10px; outline-color: #52a78f; font-size: 12px; }
 .manual-shopping-form .outline-button { min-height: 40px; }
 .manual-shopping-list { margin-top: 2px; }
+.completed-shopping { margin-top: 13px; border: 1px solid #dfe9e3; border-radius: 11px; background: #f9fcfa; }
+.completed-shopping summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; color: #527064; cursor: pointer; font-size: 11px; font-weight: 800; list-style: none; }
+.completed-shopping summary::-webkit-details-marker { display: none; }
+.completed-shopping summary > span { display: inline-flex; align-items: center; gap: 7px; }
+.completed-shopping summary b { min-width: 23px; min-height: 23px; display: grid; place-items: center; border-radius: 999px; color: #2d765f; background: #e4f2ea; font-size: 10px; }
+.completed-shopping[open] summary { border-bottom: 1px solid #e5ece8; }
+.completed-shopping .completed-shopping-note { padding: 0 13px; }
+.completed-shopping .shopping-list { padding: 0 13px; }
 
 @media (max-width: 900px) {
   .profile-stack { grid-template-columns: 1fr; }
@@ -165,6 +188,9 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .medicine-media-tools { align-items: stretch; }
   .medicine-media-tools .outline-button { flex: 1; }
   .cabinet-tools { grid-template-columns: 1fr; gap: 8px; }
+  .cabinet-tool-actions { justify-content: flex-start; overflow: hidden; }
+  .sort-control { flex: 0 0 auto; }
+  .sort-control select { min-width: 145px; font-size: 16px; }
   .cabinet-filters { width: 100%; }
   .page-actions { justify-content: flex-start; }
   .manual-shopping-form { grid-template-columns: minmax(0, 1fr) minmax(70px, .36fr); }
@@ -172,6 +198,8 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
   .manual-shopping-form .outline-button { grid-column: span 2; width: 100%; }
   .topbar { gap: 8px; }
   .topbar > strong { flex: 1 1 0; font-size: 12px; }
+  .connection-indicator { margin-left: 0; padding: 0 7px; }
+  .connection-indicator { font-size: 0; }
 }
 
 @media (max-width: 390px) {

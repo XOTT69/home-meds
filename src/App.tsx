@@ -7,7 +7,9 @@ import {
   Edit3,
   FileDown,
   ImageIcon,
+  LogOut,
   MapPinned,
+  Minus,
   Pill,
   Plus,
   Search,
@@ -15,6 +17,7 @@ import {
   ShoppingBasket,
   Trash2,
   UserRound,
+  WifiOff,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -31,6 +34,7 @@ import { lookupMedicineByBarcode, lookupMedicineByName, lookupMedicineByText, re
 
 type MedicineShoppingStatus = 'pending' | 'done';
 type MedicineQuantityUnit = 'packages' | 'tablets' | 'capsules' | 'millilitres' | 'pieces' | 'other';
+type MedicineSort = 'attention' | 'name' | 'expiry' | 'place';
 
 type Med = {
   id: string;
@@ -219,6 +223,10 @@ function formatMedicineQuantity(value: number, unit: MedicineQuantityUnit): stri
   return `${new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(value)} ${quantityUnitShort(unit)}`;
 }
 
+function quantityStep(unit: MedicineQuantityUnit): number {
+  return unit === 'millilitres' ? 10 : 1;
+}
+
 function QuantityStepper({
   label,
   value,
@@ -234,7 +242,7 @@ function QuantityStepper({
   onUnitChange?: (unit: MedicineQuantityUnit) => void;
   hint?: string;
 }) {
-  const step = unit === 'millilitres' ? 10 : 1;
+  const step = quantityStep(unit);
   return <div className="form-field quantity-field">
     <span>{label}</span>
     <div className="quantity-control">
@@ -314,6 +322,14 @@ function isLowStock(medicine: Med): boolean {
   return medicine.minimumQuantity > 0 && medicine.quantity <= medicine.minimumQuantity;
 }
 
+function medicineAttentionRank(medicine: Med): number {
+  const expiryDays = daysUntilExpiry(medicine.expiry);
+  if (expiryDays !== null && expiryDays < 0) return 0;
+  if (isLowStock(medicine)) return 1;
+  if (expiryDays !== null && expiryDays <= 30) return 2;
+  return 3;
+}
+
 function daysUntilExpiry(value: string): number | null {
   if (!value) return null;
   const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -379,16 +395,49 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+    const focusables = () => Array.from(dialog?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
+    if (dialog && !dialog.contains(document.activeElement)) {
+      requestAnimationFrame(() => (focusables()[0] ?? dialog).focus());
+    }
+
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleKeyboard);
+    return () => {
+      window.removeEventListener('keydown', handleKeyboard);
+      previousFocus?.focus();
+    };
   }, [onClose]);
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <section aria-modal="true" aria-label={title} className="modal roomy-modal" role="dialog" onMouseDown={(event) => event.stopPropagation()}>
+    <section aria-modal="true" aria-label={title} className="modal roomy-modal" ref={dialogRef} role="dialog" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
       <div className="modal-head">
         <h2>{title}</h2>
         <button aria-label="Закрити" className="icon-button" onClick={onClose} type="button"><X /></button>
@@ -443,10 +492,32 @@ function MedicineEditor({
   const [nameLookupBusy, setNameLookupBusy] = useState(false);
   const scanInput = useRef<HTMLInputElement>(null);
   const packageScanInput = useRef<HTMLInputElement>(null);
+  const temporaryPhotoPaths = useRef(new Set<string>());
+
+  useEffect(() => () => {
+    const paths = Array.from(temporaryPhotoPaths.current);
+    if (paths.length) void supabase!.storage.from('home-meds-photos').remove(paths);
+  }, []);
 
   const setValue = <Key extends keyof Med>(key: Key, nextValue: Med[Key]) => {
     setDraft((current) => ({ ...current, [key]: nextValue }));
   };
+
+  const changePhoto = (photoPath?: string) => {
+    const previousPath = draft.photoPath;
+    if (previousPath && previousPath !== value.photoPath && previousPath !== photoPath) {
+      temporaryPhotoPaths.current.delete(previousPath);
+      void supabase!.storage.from('home-meds-photos').remove([previousPath]);
+    }
+    if (photoPath && photoPath !== value.photoPath) temporaryPhotoPaths.current.add(photoPath);
+    setValue('photoPath', photoPath);
+  };
+
+  const requestClose = useCallback(() => {
+    if (saving || nameLookupBusy || scanProgress !== null) return;
+    if (JSON.stringify(draft) !== JSON.stringify(value) && !window.confirm('Відкинути незбережені зміни?')) return;
+    onClose();
+  }, [draft, nameLookupBusy, onClose, saving, scanProgress, value]);
 
   const toggleMember = (memberId: string) => {
     setDraft((current) => ({
@@ -557,13 +628,16 @@ function MedicineEditor({
     event.preventDefault();
     setSaving(true);
     try {
-      if (await onSave(draft)) onClose();
+      if (await onSave(draft)) {
+        if (draft.photoPath) temporaryPhotoPaths.current.delete(draft.photoPath);
+        onClose();
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  return <Modal onClose={onClose} title={value.name ? 'Редагувати ліки' : 'Додати ліки'}>
+  return <Modal onClose={requestClose} title={value.name ? 'Редагувати ліки' : 'Додати ліки'}>
     <form className="form-grid medicine-editor" onSubmit={(event) => void submit(event)}>
       <div className="form-two-columns">
         <div className="form-field">
@@ -625,7 +699,7 @@ function MedicineEditor({
         <textarea value={draft.warnings} onChange={(event) => setValue('warnings', event.target.value)} placeholder="Алергії, протипоказання, умови зберігання" rows={2} />
       </Field>
       <div className="medicine-media-tools">
-        <MedicinePhotoUploader userId={userId} value={draft.photoPath} onChange={(photoPath) => setValue('photoPath', photoPath)} />
+        <MedicinePhotoUploader userId={userId} value={draft.photoPath} onChange={changePhoto} />
         <input
           accept="image/*"
           capture="environment"
@@ -668,6 +742,11 @@ function TripEditor({
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState('');
   const setValue = <Key extends keyof Trip>(key: Key, nextValue: Trip[Key]) => setDraft((current) => ({ ...current, [key]: nextValue }));
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (JSON.stringify(draft) !== JSON.stringify(value) && !window.confirm('Відкинути незбережені зміни?')) return;
+    onClose();
+  }, [draft, onClose, saving, value]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -683,7 +762,7 @@ function TripEditor({
     }
   };
 
-  return <Modal onClose={onClose} title={value.title ? 'Редагувати подорож' : 'Нова подорож'}>
+  return <Modal onClose={requestClose} title={value.title ? 'Редагувати подорож' : 'Нова подорож'}>
     <form className="form-grid" onSubmit={(event) => void submit(event)}>
       <Field label="Назва">
         <input autoFocus required value={draft.title} onChange={(event) => setValue('title', event.target.value)} placeholder="Наприклад, Вікенд у Львові" />
@@ -728,6 +807,11 @@ function TripItemEditor({
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const setValue = <Key extends keyof TripItem>(key: Key, nextValue: TripItem[Key]) => setDraft((current) => ({ ...current, [key]: nextValue }));
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (JSON.stringify(draft) !== JSON.stringify(value) && !window.confirm('Відкинути незбережені зміни?')) return;
+    onClose();
+  }, [draft, onClose, saving, value]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -739,7 +823,7 @@ function TripItemEditor({
     }
   };
 
-  return <Modal onClose={onClose} title={value.title ? 'Редагувати пункт' : 'Додати до чекліста'}>
+  return <Modal onClose={requestClose} title={value.title ? 'Редагувати пункт' : 'Додати до чекліста'}>
     <form className="form-grid" onSubmit={(event) => void submit(event)}>
       <Field label="Що взяти">
         <input autoFocus required value={draft.title} onChange={(event) => setValue('title', event.target.value)} />
@@ -768,6 +852,11 @@ function ManualShoppingEditor({
 }) {
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (JSON.stringify(draft) !== JSON.stringify(value) && !window.confirm('Відкинути незбережені зміни?')) return;
+    onClose();
+  }, [draft, onClose, saving, value]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -779,7 +868,7 @@ function ManualShoppingEditor({
     }
   };
 
-  return <Modal onClose={onClose} title="Редагувати покупку">
+  return <Modal onClose={requestClose} title="Редагувати покупку">
     <form className="form-grid" onSubmit={(event) => void submit(event)}>
       <Field label="Що купити">
         <input autoFocus required value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} />
@@ -872,6 +961,9 @@ function Workspace({ user }: { user: User }) {
   const [sharingAvailable, setSharingAvailable] = useState<boolean | null>(null);
   const [medicineQuery, setMedicineQuery] = useState('');
   const [medicineFilter, setMedicineFilter] = useState<'all' | 'low' | 'expiry' | 'purchases'>('all');
+  const [medicineSort, setMedicineSort] = useState<MedicineSort>('attention');
+  const [stockSavingId, setStockSavingId] = useState('');
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const reportError = useCallback((message: string) => setSyncError(message), []);
   const dataOwnerId = householdAccess?.owner_user_id ?? user.id;
@@ -957,6 +1049,34 @@ function Workspace({ user }: { user: User }) {
   }, [load]);
 
   useEffect(() => {
+    const updateConnection = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateConnection);
+    window.addEventListener('offline', updateConnection);
+    return () => {
+      window.removeEventListener('online', updateConnection);
+      window.removeEventListener('offline', updateConnection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !dataOwnerId) return undefined;
+    let refreshTimer: number | undefined;
+    const scheduleRefresh = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void load({ background: true }), 350);
+    };
+    const channel = supabase.channel(`home-meds-sync-${dataOwnerId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'home_meds_items', filter: `user_id=eq.${dataOwnerId}` }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'home_meds_trips', filter: `user_id=eq.${dataOwnerId}` }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'home_meds_members', filter: `user_id=eq.${dataOwnerId}` }, scheduleRefresh)
+      .subscribe();
+    return () => {
+      window.clearTimeout(refreshTimer);
+      void supabase?.removeChannel(channel);
+    };
+  }, [dataOwnerId, load]);
+
+  useEffect(() => {
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void load({ background: true });
     };
@@ -975,8 +1095,13 @@ function Workspace({ user }: { user: User }) {
     void load({ background: true });
   }, [load]);
 
+  const signOut = async () => {
+    if (!window.confirm('Вийти з Home Meds на цьому пристрої?')) return;
+    const { error } = await supabase!.auth.signOut();
+    if (error) reportError('Не вдалося вийти. Перевірте підключення та спробуйте ще раз.');
+  };
+
   const saveMedicine = async (input: Med): Promise<boolean> => {
-    const previous = medicines;
     const existing = medicines.find((medicine) => medicine.id === input.id);
     const base: Med = {
       ...input,
@@ -1010,10 +1135,9 @@ function Workspace({ user }: { user: User }) {
       payload: next,
     });
     if (error) {
-      setMedicines(previous);
-      if (next.photoPath && next.photoPath !== existing?.photoPath) {
-        void supabase!.storage.from('home-meds-photos').remove([next.photoPath]);
-      }
+      setMedicines((current) => existing
+        ? current.map((medicine) => medicine.id === next.id ? existing : medicine)
+        : current.filter((medicine) => medicine.id !== next.id));
       reportError('Ліки не збережено: ' + errorText(error, 'перевірте підключення та спробуйте ще раз.'));
       return false;
     }
@@ -1024,13 +1148,25 @@ function Workspace({ user }: { user: User }) {
     return true;
   };
 
+  const adjustMedicineStock = async (medicine: Med, direction: -1 | 1) => {
+    if (stockSavingId) return;
+    const step = quantityStep(medicine.quantityUnit);
+    const quantity = Math.max(0, medicine.quantity + direction * step);
+    if (quantity === medicine.quantity) return;
+    setStockSavingId(medicine.id);
+    try {
+      await saveMedicine({ ...medicine, quantity });
+    } finally {
+      setStockSavingId('');
+    }
+  };
+
   const deleteMedicine = async (medicine: Med) => {
     if (!window.confirm('Видалити «' + medicine.name + '» з аптечки?')) return;
-    const previous = medicines;
     setMedicines((current) => current.filter((item) => item.id !== medicine.id));
     const { error } = await supabase!.from('home_meds_items').delete().eq('id', medicine.id).eq('user_id', dataOwnerId);
     if (error) {
-      setMedicines(previous);
+      setMedicines((current) => current.some((item) => item.id === medicine.id) ? current : [medicine, ...current]);
       reportError('Не вдалося видалити ліки: ' + errorText(error, 'спробуйте ще раз.'));
       return;
     }
@@ -1041,7 +1177,8 @@ function Workspace({ user }: { user: User }) {
   };
 
   const saveTrip = async (input: Trip): Promise<boolean> => {
-    const isNewTrip = !trips.some((trip) => trip.id === input.id);
+    const existingTrip = trips.find((trip) => trip.id === input.id);
+    const isNewTrip = !existingTrip;
     const next: Trip = {
       ...input,
       title: input.title.trim(),
@@ -1057,20 +1194,20 @@ function Workspace({ user }: { user: User }) {
       reportError('Дата завершення не може бути раніше за дату початку.');
       return false;
     }
-    const previous = trips;
     setTrips((current) => [next, ...current.filter((trip) => trip.id !== next.id)]);
     setActiveTripId(next.id);
     const { template: _template, ...storedTrip } = next;
     const { error } = await supabase!.from('home_meds_trips').upsert({ ...storedTrip, user_id: dataOwnerId });
     if (error) {
-      setTrips(previous);
+      setTrips((current) => existingTrip
+        ? current.map((trip) => trip.id === next.id ? existingTrip : trip)
+        : current.filter((trip) => trip.id !== next.id));
       reportError('Подорож не збережено: ' + errorText(error, 'спробуйте ще раз.'));
       return false;
     }
     const templateItems = isNewTrip ? tripTemplates[next.template].items : [];
     if (templateItems.length) {
       const createdItems = templateItems.map((item) => ({ ...newTripItem(next.id), ...item }));
-      const previousItems = tripItems;
       setTripItems((current) => [...createdItems, ...current]);
       const results = await Promise.all(createdItems.map((item) => supabase!.from('home_meds_items').upsert({
         id: item.id,
@@ -1080,7 +1217,7 @@ function Workspace({ user }: { user: User }) {
       })));
       const itemError = results.find((result) => result.error)?.error;
       if (itemError) {
-        setTripItems(previousItems);
+        await load({ background: true });
         reportError('Подорож створено, але шаблонний чекліст не збережено: ' + errorText(itemError, 'спробуйте ще раз.'));
       }
     }
@@ -1089,8 +1226,6 @@ function Workspace({ user }: { user: User }) {
 
   const deleteTrip = async (trip: Trip) => {
     if (!window.confirm('Видалити подорож «' + trip.title + '» та її чекліст?')) return;
-    const previousTrips = trips;
-    const previousItems = tripItems;
     const relatedItems = tripItems.filter((item) => item.tripId === trip.id);
     setTrips((current) => current.filter((item) => item.id !== trip.id));
     setTripItems((current) => current.filter((item) => item.tripId !== trip.id));
@@ -1102,13 +1237,13 @@ function Workspace({ user }: { user: User }) {
     ]);
     const failure = results.find((result) => result.error)?.error;
     if (failure) {
-      setTrips(previousTrips);
-      setTripItems(previousItems);
+      await load({ background: true });
       reportError('Не вдалося повністю видалити подорож: ' + errorText(failure, 'спробуйте ще раз.'));
     }
   };
 
   const saveTripItem = async (input: TripItem): Promise<boolean> => {
+    const existingItem = tripItems.find((item) => item.id === input.id);
     const next: TripItem = {
       ...input,
       title: input.title.trim(),
@@ -1119,7 +1254,6 @@ function Workspace({ user }: { user: User }) {
       reportError('Вкажіть, що треба взяти.');
       return false;
     }
-    const previous = tripItems;
     setTripItems((current) => [next, ...current.filter((item) => item.id !== next.id)]);
     const { error } = await supabase!.from('home_meds_items').upsert({
       id: next.id,
@@ -1128,7 +1262,9 @@ function Workspace({ user }: { user: User }) {
       payload: next,
     });
     if (error) {
-      setTripItems(previous);
+      setTripItems((current) => existingItem
+        ? current.map((item) => item.id === next.id ? existingItem : item)
+        : current.filter((item) => item.id !== next.id));
       reportError('Пункт чекліста не збережено: ' + errorText(error, 'спробуйте ще раз.'));
       return false;
     }
@@ -1137,16 +1273,16 @@ function Workspace({ user }: { user: User }) {
 
   const deleteTripItem = async (item: TripItem) => {
     if (!window.confirm('Видалити «' + item.title + '» зі списку?')) return;
-    const previous = tripItems;
     setTripItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
     const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId);
     if (error) {
-      setTripItems(previous);
+      setTripItems((current) => current.some((currentItem) => currentItem.id === item.id) ? current : [item, ...current]);
       reportError('Не вдалося видалити пункт: ' + errorText(error, 'спробуйте ще раз.'));
     }
   };
 
   const saveManualPurchase = async (input: ManualShoppingItem): Promise<boolean> => {
+    const existingItem = manualPurchases.find((item) => item.id === input.id);
     const next: ManualShoppingItem = {
       ...input,
       title: input.title.trim(),
@@ -1157,7 +1293,6 @@ function Workspace({ user }: { user: User }) {
       reportError('Напишіть, що потрібно купити.');
       return false;
     }
-    const previous = manualPurchases;
     setManualPurchases((current) => [next, ...current.filter((item) => item.id !== next.id)]);
     const { error } = await supabase!.from('home_meds_items').upsert({
       id: next.id,
@@ -1166,7 +1301,9 @@ function Workspace({ user }: { user: User }) {
       payload: next,
     });
     if (error) {
-      setManualPurchases(previous);
+      setManualPurchases((current) => existingItem
+        ? current.map((item) => item.id === next.id ? existingItem : item)
+        : current.filter((item) => item.id !== next.id));
       reportError('Покупку не збережено: ' + errorText(error, 'спробуйте ще раз.'));
       return false;
     }
@@ -1180,11 +1317,10 @@ function Workspace({ user }: { user: User }) {
 
   const deleteManualPurchase = async (item: ManualShoppingItem) => {
     if (!window.confirm('Видалити «' + item.title + '» зі списку покупок?')) return;
-    const previous = manualPurchases;
     setManualPurchases((current) => current.filter((currentItem) => currentItem.id !== item.id));
     const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId);
     if (error) {
-      setManualPurchases(previous);
+      setManualPurchases((current) => current.some((currentItem) => currentItem.id === item.id) ? current : [item, ...current]);
       reportError('Не вдалося видалити покупку: ' + errorText(error, 'спробуйте ще раз.'));
     }
   };
@@ -1231,7 +1367,7 @@ function Workspace({ user }: { user: User }) {
   const cabinetPlaces = useMemo(() => Array.from(new Set(medicines.map((medicine) => medicine.place).filter(Boolean))).sort(), [medicines]);
   const visibleMedicines = useMemo(() => {
     const query = medicineQuery.trim().toLocaleLowerCase('uk');
-    return medicines.filter((medicine) => {
+    const filtered = medicines.filter((medicine) => {
       const matchesQuery = !query || [medicine.name, medicine.category, medicine.place, medicine.activeIngredient, medicine.notes]
         .some((value) => value.toLocaleLowerCase('uk').includes(query));
       const expiryDays = daysUntilExpiry(medicine.expiry);
@@ -1241,7 +1377,17 @@ function Workspace({ user }: { user: User }) {
         || (medicineFilter === 'purchases' && medicine.shoppingStatus === 'pending');
       return matchesQuery && matchesFilter;
     });
-  }, [medicineFilter, medicineQuery, medicines]);
+    return [...filtered].sort((left, right) => {
+      if (medicineSort === 'name') return left.name.localeCompare(right.name, 'uk');
+      if (medicineSort === 'place') return left.place.localeCompare(right.place, 'uk') || left.name.localeCompare(right.name, 'uk');
+      if (medicineSort === 'expiry') {
+        const leftExpiry = left.expiry || '9999-12-31';
+        const rightExpiry = right.expiry || '9999-12-31';
+        return leftExpiry.localeCompare(rightExpiry) || left.name.localeCompare(right.name, 'uk');
+      }
+      return medicineAttentionRank(left) - medicineAttentionRank(right) || left.name.localeCompare(right.name, 'uk');
+    });
+  }, [medicineFilter, medicineQuery, medicineSort, medicines]);
 
   const exportCabinet = () => {
     const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] ?? character);
@@ -1289,7 +1435,8 @@ function Workspace({ user }: { user: User }) {
         <div className="mobile-brand"><span className="brand-mark">+</span>home <b>meds</b></div>
         <strong>{profile.household_name}</strong>
         {sharedCabinet && <span className="shared-cabinet-indicator">Спільна</span>}
-        <button aria-label="Вийти з акаунта" className="profile" onClick={() => void supabase!.auth.signOut()} title="Вийти" type="button">
+        {!isOnline && <span className="connection-indicator"><WifiOff size={13} /> Офлайн</span>}
+        <button aria-label="Відкрити профіль" className="profile" onClick={() => setTab('profile')} title="Профіль" type="button">
           {(profile.display_name || user.email || 'Я').slice(0, 1).toUpperCase()}
         </button>
       </header>
@@ -1321,9 +1468,17 @@ function Workspace({ user }: { user: User }) {
         </section>}
 
         <div className="cabinet-tools">
-          <label className="search"><Search size={17} /><input aria-label="Пошук ліків" onChange={(event) => setMedicineQuery(event.target.value)} placeholder="Пошук за назвою, категорією або місцем" value={medicineQuery} /></label>
-          <div className="filter-row cabinet-filters">
-            {([['all', 'Усі'], ['low', 'Мало'], ['expiry', 'Термін'], ['purchases', 'Купити']] as const).map(([id, label]) => <button className={'filter ' + (medicineFilter === id ? 'active' : '')} key={id} onClick={() => setMedicineFilter(id)} type="button">{label}</button>)}
+          <div className="search"><Search size={17} /><input aria-label="Пошук ліків" onChange={(event) => setMedicineQuery(event.target.value)} placeholder="Пошук за назвою, категорією або місцем" value={medicineQuery} />{medicineQuery && <button aria-label="Очистити пошук" className="search-clear" onClick={() => setMedicineQuery('')} type="button"><X size={15} /></button>}</div>
+          <div className="cabinet-tool-actions">
+            <label className="sort-control"><span>Сортування</span><select aria-label="Сортування ліків" onChange={(event) => setMedicineSort(event.target.value as MedicineSort)} value={medicineSort}>
+              <option value="attention">Спочатку важливе</option>
+              <option value="name">За назвою</option>
+              <option value="expiry">За терміном</option>
+              <option value="place">За місцем</option>
+            </select></label>
+            <div className="filter-row cabinet-filters">
+              {([['all', 'Усі'], ['low', 'Мало'], ['expiry', 'Термін'], ['purchases', 'Купити']] as const).map(([id, label]) => <button className={'filter ' + (medicineFilter === id ? 'active' : '')} key={id} onClick={() => setMedicineFilter(id)} type="button">{label}</button>)}
+            </div>
           </div>
         </div>
         {cabinetPlaces.length > 1 && <p className="location-summary">Локації: {cabinetPlaces.join(' · ')}</p>}
@@ -1357,6 +1512,11 @@ function Workspace({ user }: { user: User }) {
               {medicine.instructions && <p className="medicine-note">Як застосовувати: {medicine.instructions}</p>}
               {medicine.warnings && <p className="medicine-warning"><ShieldAlert size={13} /> {medicine.warnings}</p>}
               <div className="medicine-card-footer">
+                {canEdit && <div aria-label={'Швидко змінити запас ' + medicine.name} className="stock-stepper">
+                  <button aria-label={'Зменшити запас ' + medicine.name} disabled={stockSavingId === medicine.id || medicine.quantity <= 0} onClick={() => void adjustMedicineStock(medicine, -1)} title="Використано" type="button"><Minus size={14} /></button>
+                  <span title="Швидка зміна залишку">Запас</span>
+                  <button aria-label={'Збільшити запас ' + medicine.name} disabled={stockSavingId === medicine.id} onClick={() => void adjustMedicineStock(medicine, 1)} title="Додати до запасу" type="button"><Plus size={14} /></button>
+                </div>}
                 {canEdit && <button className="text-button" onClick={() => setModal(<AddMedicineToTrip medicine={medicine} onAdd={saveTripItem} onClose={() => setModal(null)} trips={trips} />)} type="button"><MapPinned size={15} /> Взяти в подорож</button>}
                 {canEdit && low && medicine.shoppingStatus !== 'done' && <button className="buy-tag" onClick={() => void saveMedicine({ ...medicine, shoppingStatus: 'done', purchaseDoneAt: new Date().toISOString() })} type="button">Куплено</button>}
                 {low && medicine.shoppingStatus === 'done' && <span className="cabinet-tag">Куплено</span>}
@@ -1399,16 +1559,19 @@ function Workspace({ user }: { user: User }) {
               <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
             </div>)}
           </div>}
-          {completedPurchases.length > 0 && <p className="completed-shopping-note"><Check size={15} /> Куплено: {completedPurchases.map((medicine) => medicine.name).join(', ')}. Оновіть залишок, коли покладете покупки в аптечку.</p>}
-          {completedManualPurchases.length > 0 && <div className="shopping-list completed-manual-shopping-list">
-            {completedManualPurchases.map((item) => <div className="shopping-item bought" key={item.id}>
-              <span className="pill-symbol"><Check size={17} /></span>
-              <div><strong>{item.title}</strong><small>{[item.quantity, item.note].filter(Boolean).join(' · ') || 'Куплено вручну'}</small></div>
-              {canEdit && <><button className="text-button" onClick={() => void saveManualPurchase({ ...item, done: false })} type="button">Повернути</button>
-              <button aria-label={'Редагувати ' + item.title} className="dots" onClick={() => openManualShoppingEditor(item)} type="button"><Edit3 size={16} /></button>
-              <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
-            </div>)}
-          </div>}
+          {(completedPurchases.length > 0 || completedManualPurchases.length > 0) && <details className="completed-shopping">
+            <summary><span><Check size={15} /> Куплено</span><b>{completedPurchases.length + completedManualPurchases.length}</b></summary>
+            {completedPurchases.length > 0 && <p className="completed-shopping-note">{completedPurchases.map((medicine) => medicine.name).join(', ')}. Оновіть залишок, коли покладете покупки в аптечку.</p>}
+            {completedManualPurchases.length > 0 && <div className="shopping-list completed-manual-shopping-list">
+              {completedManualPurchases.map((item) => <div className="shopping-item bought" key={item.id}>
+                <span className="pill-symbol"><Check size={17} /></span>
+                <div><strong>{item.title}</strong><small>{[item.quantity, item.note].filter(Boolean).join(' · ') || 'Куплено вручну'}</small></div>
+                {canEdit && <><button className="text-button" onClick={() => void saveManualPurchase({ ...item, done: false })} type="button">Повернути</button>
+                <button aria-label={'Редагувати ' + item.title} className="dots" onClick={() => openManualShoppingEditor(item)} type="button"><Edit3 size={16} /></button>
+                <button aria-label={'Видалити ' + item.title} className="dots danger-action" onClick={() => void deleteManualPurchase(item)} type="button"><Trash2 size={16} /></button></>}
+              </div>)}
+            </div>}
+          </details>}
         </section>
       </section>}
 
@@ -1469,8 +1632,9 @@ function Workspace({ user }: { user: User }) {
           <div>
             <p className="eyebrow">НАЛАШТУВАННЯ</p>
             <h1>Профіль і безпека</h1>
-            <p className="subtext">Налаштуйте аптечку, родину, терміни та захист цього пристрою.</p>
+            <p className="subtext">Налаштуйте аптечку, родинний доступ, нагадування та історію змін.</p>
           </div>
+          <button className="outline-button" onClick={() => void signOut()} type="button"><LogOut size={16} /> Вийти</button>
         </div>
         <div className="profile-stack">
           {sharingAvailable === true && <HouseholdSharingPanel onHouseholdChange={handleHouseholdChange} userId={user.id} />}

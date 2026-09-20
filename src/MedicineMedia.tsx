@@ -1,11 +1,20 @@
 import { Camera, ImagePlus, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
 
 export function MedicinePhotoUploader({ userId, value, onChange }: { userId: string; value?: string; onChange: (path?: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
+  const mounted = useRef(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const choose = async (file?: File) => {
     if (!file) return;
     const extensions: Record<string, string> = {
@@ -24,6 +33,10 @@ export function MedicinePhotoUploader({ userId, value, onChange }: { userId: str
       upsert: false,
       contentType: file.type,
     });
+    if (!mounted.current) {
+      if (!error) void supabase!.storage.from('home-meds-photos').remove([path]);
+      return;
+    }
     setPending(false);
     if (error) return setMessage('Не вдалося завантажити фото.');
     onChange(path);

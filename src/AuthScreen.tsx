@@ -4,6 +4,18 @@ import { supabase } from './lib/supabase';
 
 type Mode = 'sign-in' | 'sign-up' | 'recover' | 'new-password';
 
+function authErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (message.includes('invalid login credentials')) return 'Невірна електронна пошта або пароль.';
+  if (message.includes('email not confirmed')) return 'Спочатку підтвердьте електронну пошту за посиланням у листі.';
+  if (message.includes('user already registered')) return 'Акаунт із цією поштою вже існує. Спробуйте увійти або відновити пароль.';
+  if (message.includes('password') && (message.includes('characters') || message.includes('weak'))) return 'Пароль має містити щонайменше 8 символів.';
+  if (message.includes('rate limit') || message.includes('too many')) return 'Забагато спроб. Зачекайте кілька хвилин і повторіть.';
+  if (message.includes('fetch') || message.includes('network')) return 'Немає зв’язку із сервером. Перевірте інтернет і спробуйте ще раз.';
+  if (message.includes('signup') && message.includes('disabled')) return 'Реєстрація тимчасово вимкнена. Спробуйте пізніше.';
+  return 'Не вдалося виконати дію. Перевірте дані та спробуйте ще раз.';
+}
+
 export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolean; onRecoveryComplete?: () => void }) {
   const [mode, setMode] = useState<Mode>(recovery ? 'new-password' : 'sign-in');
   const [email, setEmail] = useState('');
@@ -25,14 +37,15 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
     }
     setBusy(true);
     const client = supabase!;
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       if (mode === 'sign-in') {
-        const { error: authError } = await client.auth.signInWithPassword({ email, password });
+        const { error: authError } = await client.auth.signInWithPassword({ email: normalizedEmail, password });
         if (authError) throw authError;
       }
       if (mode === 'sign-up') {
         const { error: authError } = await client.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: { emailRedirectTo: appUrl },
         });
@@ -40,7 +53,7 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
         setMessage('Майже готово: перевірте пошту й підтвердьте адресу, щоб увійти.');
       }
       if (mode === 'recover') {
-        const { error: authError } = await client.auth.resetPasswordForEmail(email, { redirectTo: appUrl });
+        const { error: authError } = await client.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: appUrl });
         if (authError) throw authError;
         setMessage('Якщо акаунт існує, ми надіслали лист для безпечного відновлення доступу.');
       }
@@ -52,7 +65,7 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
         onRecoveryComplete?.();
       }
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : 'Щось пішло не так. Спробуйте ще раз.');
+      setError(authErrorMessage(authError));
     } finally {
       setBusy(false);
     }
@@ -72,7 +85,7 @@ export function AuthScreen({ recovery, onRecoveryComplete }: { recovery?: boolea
       {!passwordMode && <label>Email<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>}
       {!recoveryMode && <label>Пароль<input type="password" required minLength={8} autoComplete={passwordMode ? 'new-password' : isSignUp ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Щонайменше 8 символів" /></label>}
       {passwordMode && <label>Повторіть пароль<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Повторіть новий пароль" /></label>}
-      {error && <p className="auth-message error">{error}</p>}{message && <p className="auth-message success"><CheckCircle2 size={16} />{message}</p>}
+      {error && <p className="auth-message error" role="alert">{error}</p>}{message && <p aria-live="polite" className="auth-message success"><CheckCircle2 size={16} />{message}</p>}
       <button className="primary-button full auth-submit" disabled={busy}>{busy ? 'Зачекайте…' : passwordMode ? 'Зберегти новий пароль' : recoveryMode ? 'Надіслати посилання' : isSignUp ? 'Створити акаунт' : 'Увійти'}</button>
       {mode === 'sign-in' && <button type="button" className="auth-text-button" onClick={() => changeMode('recover')}>Забули пароль?</button>}
       {!recoveryMode && !passwordMode && <p className="auth-switch">{isSignUp ? 'Вже маєте акаунт?' : 'Ще не маєте акаунта?'} <button type="button" onClick={() => changeMode(isSignUp ? 'sign-in' : 'sign-up')}>{isSignUp ? 'Увійти' : 'Зареєструватися'}</button></p>}

@@ -1,10 +1,12 @@
 {
   "name": "home meds — домашня аптечка",
   "short_name": "home meds",
+  "lang": "uk",
   "description": "Ліки вдома, строки придатності та списки для подорожей.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f7f8f5",
   "theme_color": "#1b6b5c",
-  "icons": [{ "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "categories": ["health", "lifestyle", "utilities"],
+  "icons": [{ "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

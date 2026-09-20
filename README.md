@@ -10,6 +10,7 @@
 - пошук, швидкі фільтри, друкований експорт аптечки у PDF та безпечні нотатки про застосування;
 - сімейні профілі з редагуванням, алергіями та примітками; у картці ліків можна позначити, кому вони підходять;
 - спільна аптечка для родини: кожен заходить зі свого акаунта, а власник призначає роль редактора або лише перегляду;
+- автоматичне оновлення аптечки на відкритих пристроях родини через Supabase Realtime;
 - журнал спільних змін для ліків, подорожей, чеклістів і профілів родини;
 - повне редагування та видалення ліків, подорожей і пунктів чекліста;
 - додавання ліків з аптечки до чекліста конкретної подорожі та шаблони «вікенд», «море», «авто / дорога», «з дитиною»;
@@ -39,7 +40,7 @@ npm run build
 ## Підключення безкоштовного Supabase
 
 1. Створіть безкоштовний проєкт у [Supabase](https://supabase.com/).
-2. У **SQL Editor** виконайте по черзі [schema.sql](./supabase/schema.sql), [міграцію профілю й подорожей](./supabase/migrations/20260914_personalize_home_meds.sql), [міграцію родини й приватних фото](./supabase/migrations/20260914_family_inventory.sql), [міграцію спільної аптечки](./supabase/migrations/20260914_shared_households.sql), [професійну міграцію ролей і журналу](./supabase/migrations/20260914_cabinet_pro.sql) та [міграцію ручних покупок](./supabase/migrations/20260914_manual_shopping.sql).
+2. У **SQL Editor** виконайте по черзі [schema.sql](./supabase/schema.sql), [міграцію профілю й подорожей](./supabase/migrations/20260914_personalize_home_meds.sql), [міграцію родини й приватних фото](./supabase/migrations/20260914_family_inventory.sql), [міграцію спільної аптечки](./supabase/migrations/20260914_shared_households.sql), [професійну міграцію ролей і журналу](./supabase/migrations/20260914_cabinet_pro.sql), [міграцію ручних покупок](./supabase/migrations/20260914_manual_shopping.sql) та [фінальне посилення безпеки й синхронізації](./supabase/migrations/20260920_product_hardening.sql).
 3. У **Authentication → URL Configuration** додайте URL сайту та `https://xott69.github.io/home-meds/` до Redirect URLs.
 4. Створіть `.env.local` за прикладом `.env.example` і вставте **Project URL** та **Publishable key** з Supabase. Не використовуйте `service_role` key.
 
