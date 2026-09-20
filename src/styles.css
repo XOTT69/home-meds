@@ -61,6 +61,14 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 .form-two-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .roomy-modal { width: min(620px, 100%); max-height: min(90vh, 760px); overflow: auto; }
 .medicine-editor { padding-bottom: 2px; }
+.name-lookup-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.name-lookup-row .outline-button { min-height: 42px; }
+.quantity-control { display: grid; grid-template-columns: 42px minmax(64px, 1fr) 42px minmax(105px, .9fr); gap: 7px; align-items: center; }
+.quantity-control > button { width: 42px; height: 42px; border: 1px solid #cfe0d7; border-radius: 9px; color: #226f5d; background: #f6fbf8; font-size: 21px; font-weight: 600; line-height: 1; }
+.quantity-control > button:disabled { opacity: .42; cursor: default; }
+.quantity-control > input { min-width: 0; padding-left: 5px; padding-right: 5px; text-align: center; font-variant-numeric: tabular-nums; }
+.quantity-control > select { min-width: 0; }
+.quantity-unit-label { min-height: 42px; display: grid; place-items: center; border: 1px solid #e0e8e3; border-radius: 9px; color: #667a71; background: #f8faf8; font-size: 12px; font-weight: 700; }
 .medicine-media-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
 .photo-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .photo-upload small { color: #a35b48; font-size: 11px; }
@@ -145,6 +153,11 @@ nav { display: grid; gap: 4px; }.nav-link, .settings { border: 0; color: #65746e
 @media (max-width: 670px) {
   .sidebar nav { grid-template-columns: repeat(3, 1fr); }
   .form-two-columns { grid-template-columns: 1fr; gap: 12px; }
+  .name-lookup-row { grid-template-columns: 1fr; }
+  .name-lookup-row .outline-button { width: 100%; }
+  .quantity-control { grid-template-columns: 42px minmax(0, 1fr) 42px; }
+  .quantity-control > select,
+  .quantity-control > .quantity-unit-label { grid-column: 1 / -1; }
   .roomy-modal { padding: 19px; }
   .medicine-card-footer { flex-wrap: wrap; }
   .medicine-card-footer .buy-tag { margin-left: 0; }

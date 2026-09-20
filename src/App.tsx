@@ -27,9 +27,10 @@ import { HouseholdSharingPanel, type HouseholdAccessState } from './components/H
 import { ActivityPanel } from './components/ActivityPanel';
 import { NotificationSettings } from './components/NotificationSettings';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
-import { lookupMedicineByBarcode, lookupMedicineByText, recognizePackageText, type MedicineLookup } from './lib/medicineLookup';
+import { lookupMedicineByBarcode, lookupMedicineByName, lookupMedicineByText, recognizePackageText, type MedicineLookup } from './lib/medicineLookup';
 
 type MedicineShoppingStatus = 'pending' | 'done';
+type MedicineQuantityUnit = 'packages' | 'tablets' | 'capsules' | 'millilitres' | 'pieces' | 'other';
 
 type Med = {
   id: string;
@@ -37,6 +38,7 @@ type Med = {
   category: string;
   quantity: number;
   minimumQuantity: number;
+  quantityUnit: MedicineQuantityUnit;
   place: string;
   expiry: string;
   barcode?: string;
@@ -112,6 +114,7 @@ const newMedicine = (): Med => ({
   category: 'Інше',
   quantity: 1,
   minimumQuantity: 0,
+  quantityUnit: 'packages',
   place: 'Домашня аптечка',
   expiry: '',
   memberIds: [],
@@ -199,6 +202,53 @@ function booleanValue(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+const quantityUnitOptions: Array<{ value: MedicineQuantityUnit; label: string; short: string }> = [
+  { value: 'packages', label: 'Пачки', short: 'пач.' },
+  { value: 'tablets', label: 'Таблетки', short: 'табл.' },
+  { value: 'capsules', label: 'Капсули', short: 'капс.' },
+  { value: 'millilitres', label: 'Мілілітри', short: 'мл' },
+  { value: 'pieces', label: 'Штуки', short: 'шт.' },
+  { value: 'other', label: 'Інше', short: 'од.' },
+];
+
+function quantityUnitShort(unit: MedicineQuantityUnit): string {
+  return quantityUnitOptions.find((option) => option.value === unit)?.short ?? 'од.';
+}
+
+function formatMedicineQuantity(value: number, unit: MedicineQuantityUnit): string {
+  return `${new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(value)} ${quantityUnitShort(unit)}`;
+}
+
+function QuantityStepper({
+  label,
+  value,
+  unit,
+  onChange,
+  onUnitChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  unit: MedicineQuantityUnit;
+  onChange: (value: number) => void;
+  onUnitChange?: (unit: MedicineQuantityUnit) => void;
+  hint?: string;
+}) {
+  const step = unit === 'millilitres' ? 10 : 1;
+  return <div className="form-field quantity-field">
+    <span>{label}</span>
+    <div className="quantity-control">
+      <button aria-label={`Зменшити: ${label}`} disabled={value <= 0} onClick={() => onChange(Math.max(0, value - step))} type="button">−</button>
+      <input aria-label={label} inputMode="decimal" min="0" step={unit === 'millilitres' ? '1' : '0.5'} type="number" value={value} onChange={(event) => onChange(numberValue(event.target.value))} />
+      <button aria-label={`Збільшити: ${label}`} onClick={() => onChange(value + step)} type="button">+</button>
+      {onUnitChange ? <select aria-label="Одиниця обліку" value={unit} onChange={(event) => onUnitChange(event.target.value as MedicineQuantityUnit)}>
+        {quantityUnitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select> : <span className="quantity-unit-label">{quantityUnitShort(unit)}</span>}
+    </div>
+    {hint && <small>{hint}</small>}
+  </div>;
+}
+
 function normalizeMedicine(payload: unknown, fallbackId: string): Med {
   const data = asRecord(payload);
   const memberIds = Array.isArray(data.memberIds)
@@ -207,6 +257,9 @@ function normalizeMedicine(payload: unknown, fallbackId: string): Med {
   const shoppingStatus = data.shoppingStatus === 'done' || data.shoppingStatus === 'pending'
     ? data.shoppingStatus
     : undefined;
+  const quantityUnit = ['packages', 'tablets', 'capsules', 'millilitres', 'pieces', 'other'].includes(stringValue(data.quantityUnit))
+    ? stringValue(data.quantityUnit) as MedicineQuantityUnit
+    : 'packages';
 
   return {
     id: stringValue(data.id, fallbackId),
@@ -214,6 +267,7 @@ function normalizeMedicine(payload: unknown, fallbackId: string): Med {
     category: stringValue(data.category, 'Інше'),
     quantity: numberValue(data.quantity, 1),
     minimumQuantity: numberValue(data.minimumQuantity ?? data.minQuantity),
+    quantityUnit,
     place: stringValue(data.place, 'Домашня аптечка'),
     expiry: stringValue(data.expiry),
     barcode: stringValue(data.barcode) || undefined,
@@ -386,6 +440,7 @@ function MedicineEditor({
   const [scanMessage, setScanMessage] = useState('');
   const [scanProgress, setScanProgress] = useState<number | null>(null);
   const [recognizedText, setRecognizedText] = useState('');
+  const [nameLookupBusy, setNameLookupBusy] = useState(false);
   const scanInput = useRef<HTMLInputElement>(null);
   const packageScanInput = useRef<HTMLInputElement>(null);
 
@@ -402,7 +457,7 @@ function MedicineEditor({
     }));
   };
 
-  const applyLookup = (lookup: MedicineLookup) => {
+  const applyLookup = (lookup: MedicineLookup, origin: 'barcode' | 'photo' | 'name') => {
     setDraft((current) => ({
       ...current,
       name: lookup.name || current.name,
@@ -412,7 +467,11 @@ function MedicineEditor({
       instructions: lookup.instructions || current.instructions,
       warnings: lookup.warnings || current.warnings,
     }));
-    if (lookup.source === 'barcode-fda') {
+    if (origin === 'name') {
+      setScanMessage(lookup.confidence === 'exact'
+        ? 'Дані знайдено за назвою й підставлено. Перевірте їх за упаковкою або офіційною інструкцією.'
+        : 'Знайдено ймовірний збіг за назвою. Перевірте препарат і дозування перед збереженням.');
+    } else if (origin === 'barcode') {
       setScanMessage(lookup.instructions || lookup.warnings
         ? 'Ліки знайдено за штрихкодом. Дані з довідника підставлено — перевірте їх за упаковкою.'
         : 'Ліки знайдено за штрихкодом. Перевірте назву й дозування за упаковкою.');
@@ -441,7 +500,7 @@ function MedicineEditor({
           setValue('barcode', barcode);
           setScanMessage('Штрихкод розпізнано. Шукаємо дані про ліки…');
           const lookup = await lookupMedicineByBarcode(barcode);
-          if (lookup) applyLookup(lookup);
+          if (lookup) applyLookup(lookup, 'barcode');
           else setScanMessage('Штрихкод розпізнано: ' + barcode + '. У безкоштовному довіднику даних не знайдено — можна спробувати фото упаковки або заповнити картку вручну.');
         } else {
           setScanMessage('Штрихкод на фото не знайдено. Спробуйте зробити чіткіше фото.');
@@ -468,12 +527,29 @@ function MedicineEditor({
       }
       setScanMessage('Шукаємо назву серед розпізнаного тексту…');
       const lookup = await lookupMedicineByText(text);
-      if (lookup) applyLookup(lookup);
+      if (lookup) applyLookup(lookup, 'photo');
       else setScanMessage('Текст з упаковки прочитано, але точного кандидата не знайдено. Перевірте назву вручну.');
     } catch {
       setScanMessage('Не вдалося прочитати фото. Спробуйте чіткіше фото лицьової сторони упаковки.');
     } finally {
       setScanProgress(null);
+    }
+  };
+
+  const searchByName = async () => {
+    const name = draft.name.trim();
+    if (name.length < 3) {
+      setScanMessage('Введіть щонайменше 3 символи назви препарату.');
+      return;
+    }
+    setNameLookupBusy(true);
+    setScanMessage('Шукаємо препарат за назвою…');
+    try {
+      const lookup = await lookupMedicineByName(name);
+      if (lookup) applyLookup(lookup, 'name');
+      else setScanMessage('У відкритих довідниках нічого не знайдено. Перевірте написання або спробуйте штрихкод чи фото упаковки.');
+    } finally {
+      setNameLookupBusy(false);
     }
   };
 
@@ -490,18 +566,32 @@ function MedicineEditor({
   return <Modal onClose={onClose} title={value.name ? 'Редагувати ліки' : 'Додати ліки'}>
     <form className="form-grid medicine-editor" onSubmit={(event) => void submit(event)}>
       <div className="form-two-columns">
-        <Field label="Назва">
-          <input autoFocus required value={draft.name} onChange={(event) => setValue('name', event.target.value)} />
-        </Field>
+        <div className="form-field">
+          <span>Назва</span>
+          <div className="name-lookup-row">
+            <input
+              aria-label="Назва ліків"
+              autoFocus
+              disabled={nameLookupBusy}
+              required
+              value={draft.name}
+              onChange={(event) => setValue('name', event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void searchByName();
+                }
+              }}
+            />
+            <button className="outline-button" disabled={nameLookupBusy || draft.name.trim().length < 3} onClick={() => void searchByName()} type="button">{nameLookupBusy ? 'Шукаємо…' : 'Підтягнути дані'}</button>
+          </div>
+          <small>Введіть назву й натисніть Enter або «Підтягнути дані».</small>
+        </div>
         <Field label="Категорія">
           <input value={draft.category} onChange={(event) => setValue('category', event.target.value)} placeholder="Наприклад, від застуди" />
         </Field>
-        <Field label="Залишок" hint="Упаковки, таблетки чи інша ваша одиниця">
-          <input min="0" type="number" value={draft.quantity} onChange={(event) => setValue('quantity', numberValue(event.target.value))} />
-        </Field>
-        <Field label="Мінімальний запас" hint="0 — не додавати до покупок">
-          <input min="0" type="number" value={draft.minimumQuantity} onChange={(event) => setValue('minimumQuantity', numberValue(event.target.value))} />
-        </Field>
+        <QuantityStepper label="Залишок" value={draft.quantity} unit={draft.quantityUnit} onChange={(quantity) => setValue('quantity', quantity)} onUnitChange={(unit) => setValue('quantityUnit', unit)} hint="Оберіть, що рахуєте: пачки, таблетки, капсули, мл або штуки." />
+        <QuantityStepper label="Мінімальний запас" value={draft.minimumQuantity} unit={draft.quantityUnit} onChange={(minimumQuantity) => setValue('minimumQuantity', minimumQuantity)} hint="Коли залишок досягне цього числа, позиція з’явиться в покупках. 0 — вимкнено." />
         <Field label="Де лежить">
           <input value={draft.place} onChange={(event) => setValue('place', event.target.value)} />
         </Field>
@@ -1089,6 +1179,7 @@ function Workspace({ user }: { user: User }) {
   };
 
   const deleteManualPurchase = async (item: ManualShoppingItem) => {
+    if (!window.confirm('Видалити «' + item.title + '» зі списку покупок?')) return;
     const previous = manualPurchases;
     setManualPurchases((current) => current.filter((currentItem) => currentItem.id !== item.id));
     const { error } = await supabase!.from('home_meds_items').delete().eq('id', item.id).eq('user_id', dataOwnerId);
@@ -1154,7 +1245,7 @@ function Workspace({ user }: { user: User }) {
 
   const exportCabinet = () => {
     const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] ?? character);
-    const rows = medicines.map((medicine) => `<tr><td>${escapeHtml(medicine.name)}</td><td>${escapeHtml(medicine.category)}</td><td>${medicine.quantity}</td><td>${escapeHtml(medicine.place)}</td><td>${escapeHtml(medicine.expiry || '—')}</td><td>${escapeHtml(medicine.notes || '—')}</td></tr>`).join('');
+    const rows = medicines.map((medicine) => `<tr><td>${escapeHtml(medicine.name)}</td><td>${escapeHtml(medicine.category)}</td><td>${escapeHtml(formatMedicineQuantity(medicine.quantity, medicine.quantityUnit))}</td><td>${escapeHtml(medicine.place)}</td><td>${escapeHtml(medicine.expiry || '—')}</td><td>${escapeHtml(medicine.notes || '—')}</td></tr>`).join('');
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       reportError('Браузер заблокував вікно експорту. Дозвольте спливні вікна для цього сайту й повторіть.');
@@ -1254,8 +1345,8 @@ function Workspace({ user }: { user: User }) {
               <p className="form">{medicine.place}</p>
               <div className="card-divider" />
               <div className="medicine-meta">
-                <span><b>{medicine.quantity}</b> у запасі</span>
-                {medicine.minimumQuantity > 0 && <span className={low ? 'low-count' : ''}>мін. {medicine.minimumQuantity}</span>}
+                <span><b>{formatMedicineQuantity(medicine.quantity, medicine.quantityUnit)}</b> у запасі</span>
+                {medicine.minimumQuantity > 0 && <span className={low ? 'low-count' : ''}>мін. {formatMedicineQuantity(medicine.minimumQuantity, medicine.quantityUnit)}</span>}
               </div>
               <div className="medicine-tags">
                 {expiryDays !== null && <span className={'status ' + (expiryDays < 0 ? 'danger' : expiryDays <= 30 ? 'warn' : 'safe')}>{expiryLabel(medicine.expiry)}</span>}
@@ -1294,7 +1385,7 @@ function Workspace({ user }: { user: User }) {
           {pendingPurchases.length ? <div className="shopping-list">
             {pendingPurchases.map((medicine) => <div className="shopping-item" key={medicine.id}>
               <span className="pill-symbol"><Pill size={17} /></span>
-              <div><strong>{medicine.name}</strong><small>Залишок: {medicine.quantity}; мінімум: {medicine.minimumQuantity}</small></div>
+              <div><strong>{medicine.name}</strong><small>Залишок: {formatMedicineQuantity(medicine.quantity, medicine.quantityUnit)}; мінімум: {formatMedicineQuantity(medicine.minimumQuantity, medicine.quantityUnit)}</small></div>
               {canEdit && <><button className="buy-tag" onClick={() => void saveMedicine({ ...medicine, shoppingStatus: 'done', purchaseDoneAt: new Date().toISOString() })} type="button">Позначити купленим</button>
               <button aria-label={'Редагувати ' + medicine.name} className="dots" onClick={() => openMedicineEditor(medicine)} type="button"><Edit3 size={16} /></button></>}
             </div>)}

@@ -25,6 +25,17 @@ type OpenFdaLabel = {
   indications_and_usage?: string[];
 };
 
+type RxNormCandidate = { rxcui?: string; name?: string; score?: string };
+
+type RxTermsProperties = {
+  displayName?: string;
+  fullName?: string;
+  fullGenericName?: string;
+  strength?: string;
+  rxtermsDoseForm?: string;
+  route?: string;
+};
+
 const MAX_FIELD_LENGTH = 900;
 
 function compactText(value: unknown): string {
@@ -62,6 +73,32 @@ function fdaLookupFromNdc(ndc: OpenFdaNdc, label?: OpenFdaLabel | null): Medicin
   };
 }
 
+async function lookupLabelByName(name: string): Promise<OpenFdaLabel | null> {
+  const cleanName = name.replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleanName) return null;
+  for (const field of ['openfda.brand_name', 'openfda.generic_name']) {
+    const data = await getJson<{ results?: OpenFdaLabel[] }>(
+      `https://api.fda.gov/drug/label.json?search=${encodeURIComponent(`${field}:"${cleanName}"`)}&limit=1`,
+    );
+    if (data?.results?.[0]) return data.results[0];
+  }
+  return null;
+}
+
+async function findRxNormCandidate(term: string): Promise<RxNormCandidate | null> {
+  const data = await getJson<{ approximateGroup?: { candidate?: RxNormCandidate[] } }>(
+    `https://rxnav.nlm.nih.gov/REST/approximateTerm.json?term=${encodeURIComponent(term)}&maxEntries=1&option=1`,
+  );
+  return data?.approximateGroup?.candidate?.[0] ?? null;
+}
+
+async function lookupRxTerms(rxcui: string): Promise<RxTermsProperties | null> {
+  const data = await getJson<{ rxtermsProperties?: RxTermsProperties }>(
+    `https://rxnav.nlm.nih.gov/REST/RxTerms/rxcui/${encodeURIComponent(rxcui)}/allinfo.json`,
+  );
+  return data?.rxtermsProperties ?? null;
+}
+
 /**
  * Looks up a US NDC/UPC barcode in the public FDA directory. It is best-effort:
  * EAN codes from other markets may not exist in the FDA catalogue.
@@ -91,27 +128,46 @@ export async function lookupMedicineByBarcode(barcode: string): Promise<Medicine
   return null;
 }
 
-/** Finds one high-ranking RxNorm candidate from package text. It deliberately
- * returns only a candidate name; instructions are never inferred from OCR. */
+/** Finds one high-ranking RxNorm candidate from package text. Any attached
+ * instructions come from a separate public label lookup, never from OCR. */
 export async function lookupMedicineByText(text: string): Promise<MedicineLookup | null> {
   const query = text.replace(/\s+/g, ' ').trim().slice(0, 120);
   if (query.length < 3) return null;
-  const data = await getJson<{ approximateGroup?: { candidate?: Array<{ name?: string; score?: string }> } }>(
-    `https://rxnav.nlm.nih.gov/REST/approximateTerm.json?term=${encodeURIComponent(query)}&maxEntries=1&option=1`,
-  );
-  const candidate = data?.approximateGroup?.candidate?.[0];
-  const name = candidate?.name?.trim() || '';
+  const candidate = await findRxNormCandidate(query);
+  const rxTerms = candidate?.rxcui ? await lookupRxTerms(candidate.rxcui) : null;
+  const name = rxTerms?.displayName?.trim() || candidate?.name?.trim() || '';
   if (!name) return null;
+  const label = await lookupLabelByName(name);
   return {
     name,
-    activeIngredient: '',
-    dosage: '',
-    instructions: '',
-    warnings: '',
+    activeIngredient: rxTerms?.fullGenericName?.trim() || '',
+    dosage: [rxTerms?.strength, rxTerms?.rxtermsDoseForm, rxTerms?.route].filter(Boolean).join(' · '),
+    instructions: compactText(label?.dosage_and_administration),
+    warnings: compactText(label?.warnings) || compactText(label?.warnings_and_cautions),
     category: 'Ліки',
     source: 'ocr-rxnorm',
     confidence: 'candidate',
   };
+}
+
+/** Name-first lookup: tries the structured FDA catalogue, then falls back to
+ * RxNorm/RxTerms. The latter remains a candidate because names can be similar. */
+export async function lookupMedicineByName(name: string): Promise<MedicineLookup | null> {
+  const query = name.replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (query.length < 3) return null;
+
+  for (const field of ['brand_name', 'generic_name']) {
+    const data = await getJson<{ results?: OpenFdaNdc[] }>(
+      `https://api.fda.gov/drug/ndc.json?search=${encodeURIComponent(`${field}:"${query}"`)}&limit=1`,
+    );
+    const ndc = data?.results?.[0];
+    if (!ndc) continue;
+    const label = await lookupLabelByName(ndc.brand_name || ndc.generic_name || query);
+    const result = fdaLookupFromNdc(ndc, label);
+    if (result) return result;
+  }
+
+  return lookupMedicineByText(query);
 }
 
 /** Runs in the browser only. OCR stays on the device; the recognized text is
